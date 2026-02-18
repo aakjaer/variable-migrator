@@ -1,0 +1,26 @@
+
+{
+  "name": "figsystem-variable-migrator",
+  "version": "1.0.0",
+  "description": "Figma plugin for migrating variables.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && esbuild code.ts --bundle --outfile=dist/code.js --platform=browser",
+    "watch": "concurrently \"vite build --watch\" \"esbuild code.ts --bundle --outfile=dist/code.js --platform=browser --watch\""
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "concurrently": "^8.2.2",
+    "esbuild": "^0.20.2",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11",
+    "vite-plugin-singlefile": "^2.0.1"
+  },
+  "dependencies": {
+    "@google/genai": "^1.40.0",
+    "lucide-react": "^0.563.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  }
+}
