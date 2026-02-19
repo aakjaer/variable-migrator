@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
   RotateCw,
-  MoreVertical,
   CheckCircle,
   Layout,
   Palette,
@@ -38,6 +37,7 @@ const App: React.FC = () => {
       } else if (msg.type === "MIGRATION_SUCCESS") {
         setLoading(false);
         setState((prev) => ({ ...prev, step: "SUCCESS" }));
+        parent.postMessage({ pluginMessage: { type: "GET_DATA" } }, "*");
       } else if (msg.type === "MIGRATION_ERROR") {
         setLoading(false);
         setState((prev) => ({ ...prev, step: "VARIABLES" }));
@@ -54,9 +54,7 @@ const App: React.FC = () => {
       step: "VARIABLES",
     }));
     parent.postMessage(
-      {
-        pluginMessage: { type: "GET_VARIABLES", payload: { collectionId: id } },
-      },
+      { pluginMessage: { type: "GET_VARIABLES", payload: { collectionId: id } } },
       "*",
     );
   };
@@ -64,6 +62,12 @@ const App: React.FC = () => {
   useEffect(() => {
     if (state.step === "SUCCESS") {
       const getAiSummary = async () => {
+        if (!process.env.API_KEY) {
+          setAiAnalysis(
+            "Variable migration complete! Configure an API key to enable expert analysis.",
+          );
+          return;
+        }
         try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const response = await ai.models.generateContent({
@@ -110,7 +114,6 @@ const App: React.FC = () => {
   const runMigration = () => {
     setLoading(true);
     setState((prev) => ({ ...prev, step: "MIGRATING" }));
-
     parent.postMessage(
       {
         pluginMessage: {
@@ -132,30 +135,16 @@ const App: React.FC = () => {
 
   const startResizing = (mouseDownEvent: React.MouseEvent) => {
     mouseDownEvent.preventDefault();
-
     const startWidth = window.innerWidth;
     const startHeight = window.innerHeight;
     const startX = mouseDownEvent.screenX;
     const startY = mouseDownEvent.screenY;
 
     const onMouseMove = (mouseMoveEvent: MouseEvent) => {
-      // Figma recommends a minimum of 300x300 for usable plugin UIs
-      const newWidth = Math.max(
-        300,
-        startWidth + (mouseMoveEvent.screenX - startX),
-      );
-      const newHeight = Math.max(
-        300,
-        startHeight + (mouseMoveEvent.screenY - startY),
-      );
-
+      const newWidth = Math.max(300, startWidth + (mouseMoveEvent.screenX - startX));
+      const newHeight = Math.max(300, startHeight + (mouseMoveEvent.screenY - startY));
       parent.postMessage(
-        {
-          pluginMessage: {
-            type: "RESIZE_WINDOW",
-            payload: { width: newWidth, height: newHeight },
-          },
-        },
+        { pluginMessage: { type: "RESIZE_WINDOW", payload: { width: newWidth, height: newHeight } } },
         "*",
       );
     };
@@ -169,6 +158,16 @@ const App: React.FC = () => {
     window.addEventListener("mouseup", onMouseUp);
   };
 
+  const refreshData = () => {
+    parent.postMessage({ pluginMessage: { type: "GET_DATA" } }, "*");
+    if (state.sourceCollectionId) {
+      parent.postMessage(
+        { pluginMessage: { type: "GET_VARIABLES", payload: { collectionId: state.sourceCollectionId } } },
+        "*",
+      );
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-[#0C0C0C] text-white overflow-hidden">
       <header className="flex items-center justify-between px-4 py-3 border-b border-[#2C2C2C] bg-[#121212] shrink-0">
@@ -176,7 +175,7 @@ const App: React.FC = () => {
           <div className="bg-[#7B61FF] p-1 rounded">
             <Layers size={18} className="text-white" />
           </div>
-          <h1 className="text-lg font-bold tracking-tight">FigSystem</h1>
+          <h1 className="text-lg font-bold tracking-tight">The Variable Migrator</h1>
         </div>
         <div className="flex items-center gap-3">
           <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#2C2C2C] text-xs font-medium hover:bg-[#2C2C2C] transition-colors">
@@ -186,13 +185,7 @@ const App: React.FC = () => {
           <RotateCw
             size={18}
             className="text-gray-400 cursor-pointer hover:text-white transition-colors"
-            onClick={() =>
-              parent.postMessage({ pluginMessage: { type: "GET_DATA" } }, "*")
-            }
-          />
-          <MoreVertical
-            size={18}
-            className="text-gray-400 cursor-pointer hover:text-white"
+            onClick={refreshData}
           />
         </div>
       </header>
@@ -201,12 +194,8 @@ const App: React.FC = () => {
         {state.step === "SOURCE" && (
           <div className="p-6 max-w-2xl mx-auto">
             <div className="mb-6">
-              <h2 className="text-xl font-semibold mb-1">
-                Select the source collection
-              </h2>
-              <p className="text-sm text-gray-400">
-                The collection you want to move variables from
-              </p>
+              <h2 className="text-xl font-semibold mb-1">Select the source collection</h2>
+              <p className="text-sm text-gray-400">The collection you want to move variables from</p>
             </div>
             <div className="space-y-2">
               {collections.map((col) => (
@@ -217,13 +206,8 @@ const App: React.FC = () => {
                 >
                   <span className="font-medium">{col.name}</span>
                   <div className="flex items-center gap-4">
-                    <span className="text-gray-500 text-sm">
-                      {col.variableIds.length}
-                    </span>
-                    <ChevronRight
-                      size={18}
-                      className="text-gray-600 group-hover:text-white"
-                    />
+                    <span className="text-gray-500 text-sm">{col.variableIds.length}</span>
+                    <ChevronRight size={18} className="text-gray-600 group-hover:text-white" />
                   </div>
                 </button>
               ))}
@@ -250,9 +234,7 @@ const App: React.FC = () => {
               <div className="p-2 space-y-1">
                 <div className="flex items-center justify-between p-2 rounded bg-[#1E1E1E] text-sm cursor-pointer">
                   <span>All Variables</span>
-                  <span className="text-xs text-gray-500">
-                    {variables.length}
-                  </span>
+                  <span className="text-xs text-gray-500">{variables.length}</span>
                 </div>
               </div>
             </aside>
@@ -270,24 +252,12 @@ const App: React.FC = () => {
                         <input
                           type="checkbox"
                           className="rounded bg-[#2C2C2C] border-none"
-                          checked={
-                            state.selectedVariableIds.length ===
-                              variables.length && variables.length > 0
-                          }
-                          onChange={
-                            state.selectedVariableIds.length ===
-                            variables.length
-                              ? handleDeselectAll
-                              : handleSelectAll
-                          }
+                          checked={state.selectedVariableIds.length === variables.length && variables.length > 0}
+                          onChange={state.selectedVariableIds.length === variables.length ? handleDeselectAll : handleSelectAll}
                         />
                       </th>
-                      <th className="px-4 py-2 border-b border-[#2C2C2C]">
-                        Name
-                      </th>
-                      <th className="px-4 py-2 border-b border-[#2C2C2C]">
-                        Type
-                      </th>
+                      <th className="px-4 py-2 border-b border-[#2C2C2C]">Name</th>
+                      <th className="px-4 py-2 border-b border-[#2C2C2C]">Type</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -298,9 +268,7 @@ const App: React.FC = () => {
                         onClick={() => handleVariableToggle(v.id)}
                       >
                         <td className="px-6 py-4 border-b border-[#1A1A1A]">
-                          <div
-                            className={`w-5 h-5 rounded border ${state.selectedVariableIds.includes(v.id) ? "bg-[#7B61FF] border-[#7B61FF]" : "border-[#444]"} flex items-center justify-center`}
-                          >
+                          <div className={`w-5 h-5 rounded border ${state.selectedVariableIds.includes(v.id) ? "bg-[#7B61FF] border-[#7B61FF]" : "border-[#444]"} flex items-center justify-center`}>
                             {state.selectedVariableIds.includes(v.id) && (
                               <Check size={14} className="text-white" />
                             )}
@@ -309,15 +277,11 @@ const App: React.FC = () => {
                         <td className="px-4 py-4 border-b border-[#1A1A1A]">
                           <div className="flex items-center gap-2">
                             <Palette size={14} className="text-gray-500" />
-                            <span className="font-medium text-gray-200">
-                              {v.name.split("/").pop()}
-                            </span>
+                            <span className="font-medium text-gray-200">{v.name.split("/").pop()}</span>
                           </div>
                         </td>
                         <td className="px-4 py-4 border-b border-[#1A1A1A]">
-                          <span className="text-xs text-gray-500 font-mono uppercase">
-                            {v.resolvedType}
-                          </span>
+                          <span className="text-xs text-gray-500 font-mono uppercase">{v.resolvedType}</span>
                         </td>
                       </tr>
                     ))}
@@ -326,19 +290,11 @@ const App: React.FC = () => {
               </div>
               <footer className="p-4 bg-[#121212] border-t border-[#2C2C2C] flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-4 text-xs text-gray-400">
-                  <span>
-                    {state.selectedVariableIds.length} Variables Selected
-                  </span>
-                  <button
-                    onClick={handleSelectAll}
-                    className="hover:text-white transition-colors"
-                  >
+                  <span>{state.selectedVariableIds.length} Variables Selected</span>
+                  <button onClick={handleSelectAll} className="hover:text-white transition-colors">
                     Select All
                   </button>
-                  <button
-                    onClick={handleDeselectAll}
-                    className="hover:text-white transition-colors"
-                  >
+                  <button onClick={handleDeselectAll} className="hover:text-white transition-colors">
                     Deselect All
                   </button>
                 </div>
@@ -358,12 +314,8 @@ const App: React.FC = () => {
           <div className="p-6 max-w-3xl mx-auto flex flex-col h-full">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h2 className="text-xl font-semibold mb-1">
-                  Select the destination collection
-                </h2>
-                <p className="text-sm text-gray-400">
-                  The collection you want to move variables to
-                </p>
+                <h2 className="text-xl font-semibold mb-1">Select the destination collection</h2>
+                <p className="text-sm text-gray-400">The collection you want to move variables to</p>
               </div>
               <button
                 onClick={() => setState((s) => ({ ...s, step: "VARIABLES" }))}
@@ -372,7 +324,6 @@ const App: React.FC = () => {
                 <ArrowLeft size={20} />
               </button>
             </div>
-
             <div className="flex-1 overflow-y-auto space-y-2 mb-6">
               {collections
                 .filter((c) => c.id !== state.sourceCollectionId)
@@ -384,9 +335,7 @@ const App: React.FC = () => {
                   >
                     <span className="font-medium">{col.name}</span>
                     <div className="flex items-center gap-4">
-                      <span className="text-gray-500 text-sm">
-                        {col.variableIds.length}
-                      </span>
+                      <span className="text-gray-500 text-sm">{col.variableIds.length}</span>
                       {state.targetCollectionId === col.id && (
                         <Check size={18} className="text-[#7B61FF]" />
                       )}
@@ -394,7 +343,6 @@ const App: React.FC = () => {
                   </button>
                 ))}
             </div>
-
             <button
               onClick={runMigration}
               disabled={!state.targetCollectionId || loading}
@@ -410,12 +358,9 @@ const App: React.FC = () => {
             {state.step === "MIGRATING" ? (
               <>
                 <div className="w-16 h-16 border-4 border-[#7B61FF] border-t-transparent rounded-full animate-spin mb-6"></div>
-                <h2 className="text-2xl font-bold mb-2">
-                  Migrating Variables...
-                </h2>
+                <h2 className="text-2xl font-bold mb-2">Migrating Variables...</h2>
                 <p className="text-gray-400 max-w-sm">
-                  Performing two-pass migration to preserve data integrity and
-                  rebinding nodes.
+                  Performing two-pass migration to preserve data integrity and rebinding nodes.
                 </p>
                 <div className="w-full max-w-xs mt-8 h-2 bg-[#1E1E1E] rounded-full overflow-hidden">
                   <div className="h-full bg-[#7B61FF] animate-pulse w-[65%]"></div>
@@ -428,10 +373,8 @@ const App: React.FC = () => {
                 </div>
                 <h2 className="text-2xl font-bold mb-2">Migration Complete!</h2>
                 <p className="text-gray-400 max-w-sm mb-6">
-                  All variables have been moved and references updated across
-                  your design.
+                  All variables have been moved and references updated across your design.
                 </p>
-
                 {aiAnalysis && (
                   <div className="max-w-md bg-[#1E1E1E] border border-[#2C2C2C] p-4 rounded-lg text-left relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-2 text-[#7B61FF]/20 group-hover:text-[#7B61FF]/40 transition-colors">
@@ -440,12 +383,9 @@ const App: React.FC = () => {
                     <h4 className="text-[#7B61FF] text-xs font-bold uppercase tracking-widest mb-2 flex items-center gap-1.5">
                       <Sparkles size={12} /> Smart Analysis
                     </h4>
-                    <p className="text-sm text-gray-300 leading-relaxed italic">
-                      "{aiAnalysis}"
-                    </p>
+                    <p className="text-sm text-gray-300 leading-relaxed italic">"{aiAnalysis}"</p>
                   </div>
                 )}
-
                 <button
                   onClick={() =>
                     setState({
@@ -468,23 +408,10 @@ const App: React.FC = () => {
       <div
         onMouseDown={startResizing}
         className="absolute bottom-1 right-1 w-4 h-4 cursor-nwse-resize z-50 flex items-end justify-end p-0.5"
-        style={{
-          background:
-            "linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.05) 50%)",
-        }}
+        style={{ background: "linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.05) 50%)" }}
       >
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          fill="none"
-          style={{ opacity: 0.4 }}
-        >
-          <path
-            d="M10 0L0 10M10 4L4 10M10 8L8 10"
-            stroke="white"
-            strokeWidth="1"
-          />
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.4 }}>
+          <path d="M10 0L0 10M10 4L4 10M10 8L8 10" stroke="white" strokeWidth="1" />
         </svg>
       </div>
     </div>
