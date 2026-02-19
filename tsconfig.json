@@ -11,7 +11,8 @@
     ],
     "skipLibCheck": true,
     "types": [
-      "node"
+      "node",
+      "@figma/plugin-typings"
     ],
     "moduleResolution": "bundler",
     "isolatedModules": true,
