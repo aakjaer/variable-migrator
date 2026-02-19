@@ -4,6 +4,7 @@ const idMap = new Map<string, string>();
 async function migrateVariables(
   sourceCollectionId: string,
   targetCollectionId: string,
+  variableIds: string[],
 ) {
   const sourceCol =
     await figma.variables.getVariableCollectionByIdAsync(sourceCollectionId);
@@ -11,84 +12,109 @@ async function migrateVariables(
     await figma.variables.getVariableCollectionByIdAsync(targetCollectionId);
 
   if (!sourceCol || !targetCol) {
-    figma.notify("Error: Source or Target collection not found.", {
-      error: true,
-    });
-    return;
+    throw new Error("Source or Target collection not found.");
   }
 
   // --- PASS 1: CREATE STRUCTURE & PRESERVE SCOPES ---
-  // Iterate through source variable IDs and create new variables in the target
-  for (const sourceId of sourceCol.variableIds) {
+  for (const sourceId of variableIds) {
     const sourceVar = await figma.variables.getVariableByIdAsync(sourceId);
     if (!sourceVar) continue;
 
     const newVar = figma.variables.createVariable(
       sourceVar.name,
-      targetCol, // Must pass collection object, not just ID
+      targetCol,
       sourceVar.resolvedType,
     );
 
-    // Sync metadata base properties
     newVar.description = sourceVar.description;
-    newVar.scopes = sourceVar.scopes; // Preserve scoping (e.g., ALL_FILLS, TEXT_CONTENT)
+    newVar.scopes = sourceVar.scopes;
 
     idMap.set(sourceVar.id, newVar.id);
   }
 
   // --- PASS 2: ASSIGN VALUES & RESOLVE ALIASES ---
-  for (const sourceId of sourceCol.variableIds) {
+  for (const sourceId of variableIds) {
     const sourceVar = await figma.variables.getVariableByIdAsync(sourceId);
     const newVarId = idMap.get(sourceId);
-    const newVar = await figma.variables.getVariableByIdAsync(newVarId!);
-    if (!sourceVar || !newVar) continue;
+    if (!sourceVar || !newVarId) continue;
+
+    const newVar = await figma.variables.getVariableByIdAsync(newVarId);
+    if (!newVar) continue;
 
     sourceCol.modes.forEach((sourceMode, index) => {
       const sourceValue = sourceVar.valuesByMode[sourceMode.modeId];
+      const targetMode =
+        targetCol.modes.find((m) => m.name === sourceMode.name) ||
+        targetCol.modes[index] ||
+        targetCol.modes[0];
 
-      // Mode Matching: Match by index or default to the first target mode
-      const targetModeId =
-        targetCol.modes[index]?.modeId || targetCol.modes[0].modeId;
-
-      // Type Handling: Check for VariableAlias vs Raw Value
       if (isVariableAlias(sourceValue)) {
-        // Resolve alias using the idMap or fallback to original if external
         const mappedId = idMap.get(sourceValue.id) || sourceValue.id;
-        newVar.setValueForMode(targetModeId, {
+        newVar.setValueForMode(targetMode.modeId, {
           type: "VARIABLE_ALIAS",
           id: mappedId,
         });
       } else {
-        newVar.setValueForMode(targetModeId, sourceValue);
+        newVar.setValueForMode(targetMode.modeId, sourceValue);
       }
     });
   }
 
   // --- GLOBAL RE-BINDING ---
-  // Find nodes and swap bound variables globally
   const allNodes = figma.currentPage.findAll();
-  allNodes.forEach((node) => {
+  for (const node of allNodes) {
     if ("boundVariables" in node && node.boundVariables) {
       const currentBounds = node.boundVariables;
 
-      // Example: Swap Fills
       if (currentBounds.fills) {
-        const updatedFills = currentBounds.fills.map((alias) => ({
+        const newFills = currentBounds.fills.map((alias) => ({
           type: "VARIABLE_ALIAS" as const,
           id: idMap.get(alias.id) || alias.id,
         }));
-        // Note: For array-based properties like fills, use specific setters if required
-        // exampleNode.setBoundVariable("fills", updatedFills[0])
+        // @ts-ignore
+        node.setBoundVariable("fills", newFills[0]);
       }
 
-      // Example: Swap Strokes
       if (currentBounds.strokes) {
-        // Apply similar mapping logic
+        const newStrokes = currentBounds.strokes.map((alias) => ({
+          type: "VARIABLE_ALIAS" as const,
+          id: idMap.get(alias.id) || alias.id,
+        }));
+        // @ts-ignore
+        node.setBoundVariable("strokes", newStrokes[0]);
+      }
+
+      const props = [
+        "opacity",
+        "visible",
+        "cornerRadius",
+        "itemSpacing",
+        "paddingLeft",
+        "paddingRight",
+        "paddingTop",
+        "paddingBottom",
+      ];
+      for (const prop of props) {
+        if (currentBounds[prop]) {
+          const alias = currentBounds[prop];
+          if (idMap.has(alias.id)) {
+            // @ts-ignore
+            node.setBoundVariable(prop, idMap.get(alias.id));
+          }
+        }
       }
     }
-  });
+  }
 
-  figma.notify("Migration complete!");
+  // --- PASS 3: DELETE ORIGINAL VARIABLES ---
+  for (const sourceId of variableIds) {
+    const sourceVar = await figma.variables.getVariableByIdAsync(sourceId);
+    if (sourceVar) {
+      sourceVar.remove();
+    }
+  }
+
+  figma.notify(`Successfully moved ${variableIds.length} variables.`);
 }
 
 function isVariableAlias(value: any): value is VariableAlias {
@@ -99,7 +125,8 @@ figma.showUI(__html__, { width: 500, height: 600, themeColors: true });
 
 figma.ui.onmessage = async (msg) => {
   if (msg.type === "GET_DATA") {
-    const collections = await figma.variables.getLocalVariableCollectionsAsync();
+    const collections =
+      await figma.variables.getLocalVariableCollectionsAsync();
     const data = collections.map((col) => ({
       id: col.id,
       name: col.name,
@@ -123,11 +150,18 @@ figma.ui.onmessage = async (msg) => {
     }
   }
 
+  if (msg.type === "RESIZE_WINDOW") {
+    figma.ui.resize(msg.payload.width, msg.payload.height);
+    // Optional: Persist size for next time
+    figma.clientStorage.setAsync("plugin-size", msg.payload);
+  }
+
   if (msg.type === "RUN_MIGRATION") {
     try {
       await migrateVariables(
         msg.payload.sourceCollectionId,
         msg.payload.targetCollectionId,
+        msg.payload.variableIds,
       );
       figma.ui.postMessage({ type: "MIGRATION_SUCCESS" });
     } catch (err) {
