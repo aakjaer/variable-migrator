@@ -11,7 +11,7 @@ import {
   ToggleLeft,
   Type,
 } from "lucide-react";
-import { Collection, Variable, MigrationState } from "./types";
+import { Collection, Variable, MigrationState, PreviewValue } from "./types";
 
 // ─── Group tree helpers ───────────────────────────────────────────────────────
 
@@ -129,6 +129,60 @@ const TypeIcon: React.FC<{ type: string }> = ({ type }) => {
     default:
       return <Palette size={13} className="text-gray-500 shrink-0" />;
   }
+};
+
+// ─── Value chip ───────────────────────────────────────────────────────────────
+
+const ValueChip: React.FC<{ value?: PreviewValue }> = ({ value }) => {
+  if (!value) return null;
+
+  if (value.kind === "alias") {
+    const segments = value.name.split("/");
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#1E1E1E] border border-[#2C2C2C] text-gray-300 text-[12px] font-mono max-w-full min-w-0">
+        <span className="w-3 h-3 rounded-sm border border-[#3C3C3C] bg-[#2C2C2C] shrink-0" />
+        <span className="truncate">{segments.join("/")}</span>
+      </span>
+    );
+  }
+
+  if (value.kind === "color") {
+    return (
+      <span className="inline-flex text-[12px] items-center gap-1.5 text-gray-300 font-mono max-w-full min-w-0">
+        <span
+          className="w-3 h-3 rounded-sm border border-white/10 shrink-0"
+          style={{ backgroundColor: value.hex }}
+        />
+        <span className="truncate uppercase">{value.hex}</span>
+      </span>
+    );
+  }
+
+  if (value.kind === "float") {
+    return (
+      <span className="text-gray-400 text-[12px] font-mono truncate">
+        {value.value}
+      </span>
+    );
+  }
+
+  if (value.kind === "boolean") {
+    return (
+      <span className="text-gray-400 text-[12px] font-mono truncate">
+        {value.value ? "true" : "false"}
+      </span>
+    );
+  }
+
+  if (value.kind === "string") {
+    return (
+      <span className="text-gray-400 text-[12px] font-mono truncate">
+        &ldquo;{value.value}&rdquo;
+      </span>
+    );
+  }
+
+  return null;
 };
 
 // ─── Sidebar group tree node ──────────────────────────────────────────────────
@@ -501,7 +555,7 @@ const App: React.FC = () => {
               {/* Variable list with group headers */}
               <div className="flex-1 overflow-y-auto">
                 {/* Sticky column header */}
-                <div className="sticky top-0 z-10 bg-[#0C0C0C] border-b border-[#1E1E1E] grid grid-cols-[2.5rem_1fr_5rem] text-gray-500 uppercase text-[10px] tracking-wider">
+                <div className="sticky top-0 z-10 bg-[#0C0C0C] border-b border-[#1E1E1E] grid grid-cols-[2.5rem_1fr_1fr_5rem] text-gray-500 uppercase text-[10px] tracking-wider">
                   <div className="px-4 py-2 flex items-center">
                     <input
                       type="checkbox"
@@ -520,6 +574,7 @@ const App: React.FC = () => {
                     />
                   </div>
                   <div className="px-3 py-2">Name</div>
+                  <div className="px-3 py-2">Value</div>
                   <div className="px-3 py-2 text-right">Type</div>
                 </div>
 
@@ -545,10 +600,10 @@ const App: React.FC = () => {
                         <div
                           key={v.id}
                           onClick={() => handleVariableToggle(v.id)}
-                          className={`grid grid-cols-[2.5rem_1fr_5rem] cursor-pointer transition-colors border-b border-[#141414]
+                          className={`grid grid-cols-[2.5rem_1fr_1fr_5rem] cursor-pointer transition-colors border-b border-[#141414]
                             ${isSelected ? "bg-[#1A1530]" : "hover:bg-[#161616]"}`}
                         >
-                          <div className="px-4 py-3 flex items-center">
+                          <div className="ps-4 py-2 flex items-center">
                             <input
                               type="checkbox"
                               checked={isSelected}
@@ -557,7 +612,7 @@ const App: React.FC = () => {
                               className="w-4 h-4 cursor-pointer accent-[#7B61FF]"
                             />
                           </div>
-                          <div className="px-3 py-3 flex items-center gap-2 min-w-0">
+                          <div className="px-2 py-2 flex items-center gap-2 min-w-0">
                             <TypeIcon type={v.resolvedType} />
                             <span
                               className={`font-medium truncate ${isSelected ? "text-white" : "text-gray-200"}`}
@@ -565,8 +620,11 @@ const App: React.FC = () => {
                               {displayName}
                             </span>
                           </div>
-                          <div className="px-3 py-3 flex items-center justify-end">
-                            <span className="text-[10px] text-gray-600 font-mono uppercase">
+                          <div className="px-3 py-2 flex items-center min-w-0">
+                            <ValueChip value={v.previewValue} />
+                          </div>
+                          <div className="px-4 py-2 flex items-center justify-end">
+                            <span className="text-gray-600 font-mono uppercase text-xs">
                               {v.resolvedType}
                             </span>
                           </div>

@@ -1,268 +1,3 @@
-
-Variable migration
-/
-I’ve been trying to make a plugin for Figma that will let me move a variable or multiple from one collection to another, while existing nodes/elements don’t loose their reference (are left with broken references). The last part is crucial, since the entire reason for me making the plugin is to avoid having to manually go through a massive amount of elements in our design system to point to a new variable in another collection. For some odd reason Figma can’t do this out of the box which means you are basically forced to keep variables where they are unless you want to suffer the manual update of locating all the places the variable is used. 
-
-My main issue is that I’ve been trying to vibe code a solution, and duplicating and moving the variable works, but updating existing ids across the file turned out to be really hard. Copilot hasn’t been able to find a solution that can capture the old variable id on an element, and update it to the new variable id. This is first and foremost meant for colors. 
-
-Is it even possible to update a variable reference like this? Copilot is grasping for straws at this point
-
-Show more
-5:02 PM
-This is a genuinely tricky problem in the Figma plugin API, and you've hit one of its real limitations. Let me be direct about what's possible and what isn't.
-
-The core problem
-Figma's plugin API does not expose a direct way to "find all nodes using variable X and replace with variable Y" in one sweep. Variable bindings are set per-node per-property, so you have to traverse the entire document tree yourself.
-
-What IS possible
-Yes, it is absolutely possible — but you have to do it the hard way. The key API pieces are:
-
-Reading a variable binding on a node:
-
-js
-const bindings = node.boundVariables;
-// e.g. { fills: [{ type: 'VARIABLE_ALIAS', id: 'VariableID:123:456' }] }
-Setting a new variable binding:
-
-js
-const newVar = figma.variables.getVariableById('VariableID:new:id');
-figma.variables.setBoundVariableForPaint(paint, 'color', newVar);
-The problem Copilot is likely running into is that you can't just swap the ID string in boundVariables directly — it's read-only. You have to reconstruct the property (e.g. the fill) with the new binding applied.
-
-The actual approach for fills/colors
-For a color variable swap you need to:
-
-Walk every node in the file (figma.currentPage.findAll() or traverse figma.root)
-For each node, check node.boundVariables
-If you find your old variable ID in a fill binding, you need to clone the fills array, and on the matching fill use figma.variables.setBoundVariableForPaint() to rebind to the new variable
-Reassign node.fills = updatedFills
-The tricky part Copilot is probably fumbling is step 3 — you're not editing in place, you're cloning the fills array and rebuilding it. Here's the core pattern:
-
-js
-async function swapVariableInNode(node, oldVarId, newVar) {
-  if (!('fills' in node)) return;
-  
-  const fills = [...node.fills];
-  let changed = false;
-
-  for (let i = 0; i < fills.length; i++) {
-    const fill = fills[i];
-    if (fill.type !== 'SOLID') continue;
-
-    const binding = node.boundVariables?.fills?.[i];
-    if (binding?.type === 'VARIABLE_ALIAS' && binding.id === oldVarId) {
-      // Clone the fill and rebind
-      fills[i] = figma.variables.setBoundVariableForPaint(fill, 'color', newVar);
-      changed = true;
-    }
-  }
-
-  if (changed) node.fills = fills;
-}
-Then walk the whole tree:
-
-js
-const nodes = figma.root.findAll(() => true);
-for (const node of nodes) {
-  await swapVariableInNode(node, oldVariableId, newVariable);
-}
-Other property types to cover
-Beyond fills you'd also want to handle strokes, and potentially text properties like fontFamily, fontSize etc. if those are variable-bound. The pattern is the same but the binding path differs.
-
-One gotcha about boundVariables structure
-The boundVariables.fills array index corresponds to the fills array index, so binding at index 1 means fills[1] is bound. This is often where naive implementations go wrong — they find a matching ID somewhere in the bindings but apply it to the wrong fill layer.
-
-Bottom line
-It's possible and the API supports it — it's just verbose and requires careful tree traversal plus property reconstruction rather than a simple ID swap. If Copilot has been trying to directly mutate boundVariables or find a shortcut API method that does this automatically, that's why it's failing — no such shortcut exists.
-
-I have added all the files from the project. The app.tsx and code ts files are the core files. 
-
-Go over the files and determine what is causing the code to fail (it breaks the references every time and is unable to determine why), and suggest an improved approach (rewrite as much of the code (UI works pretty well so let's not focus on that) that will make the plugin functional
-
-5:38 PM
-Let me read all the project files first.
-
-
-Viewed 4 files
-Viewed 4 files
-Now I have a clear picture of the code. Let me identify the root issues and write a clean rewrite.
-
-The core problems I found:
-
-applyPaintBinding uses a non-existent API. The code calls node.setBoundVariableForPaint(field, index, id) — but the real Figma API is figma.variables.setBoundVariableForPaint(paint, 'color', variable). It takes a paint object, not a node + field + index. This is the primary reason nothing works.
-Passing ID strings instead of Variable objects. All the rebind calls pass mappedId (a string) to functions that ultimately try to use it as if it were a Variable object. The API requires you to pass the actual Variable object retrieved via getVariableByIdAsync.
-forceRebindPaint / hardResetPaintBinding are elaborate workarounds built on top of the same broken foundation — they don't fix the root cause.
-The correct pattern is: clone the fills array → call figma.variables.setBoundVariableForPaint(paint, 'color', variableObject) → assign the new fills array back to the node.
-setBoundVariable for single props also needs the actual Variable object, not a string ID.
-Here's the complete rewrite of code.ts:
-
-
-Viewed a file, created a file, read a file
-Viewed a file, created a file, read a file
-
-Check types file
-
-Rewrite code.ts with correct Figma API usage for variable rebinding
-code.ts
-
-Presented file
-Done
-Here's a breakdown of every problem I found and what was changed:
-
-Root causes (why it was breaking references)
-1. setBoundVariableForPaint doesn't exist on nodes — this is the main bug.
-
-The old code called node.setBoundVariableForPaint(field, index, id) in applyPaintBinding. This method does not exist on scene nodes in the Figma plugin API. The method that does exist lives on figma.variables, not on the node, and has a completely different signature:
-
-ts
-// WRONG (old code) — this method doesn't exist
-node.setBoundVariableForPaint("fills", 0, "VariableID:...")
-
-// CORRECT — takes paint object + Variable object, returns a new paint
-const newPaint = figma.variables.setBoundVariableForPaint(paint, "color", variableObject)
-node.fills = updatedPaintsArray
-2. Passing ID strings instead of Variable objects.
-
-Both setBoundVariableForPaint and setBoundVariable require you to pass the actual Variable object retrieved from getVariableByIdAsync, not a string ID. Every rebind call in the old code passed string IDs, which is why the API silently failed or broke references.
-
-3. forceRebindPaint / hardResetPaintBinding / applyPaintBinding were all built on top of the same broken foundation. They were escalating workarounds — trying the same wrong approach in four different ways. None of them could work because the underlying API call was wrong.
-
-What the rewrite does differently
-rebindPaints() — clones the fills/strokes array, calls figma.variables.setBoundVariableForPaint(paint, 'color', variableObject) on each bound paint, writes the array back. That's it.
-rebindSingleProps() — calls node.setBoundVariable(prop, variableObject) with the actual object.
-rebindTextNode() — handles per-character bindings using setRangeBoundVariableForPaint with the Variable object.
-All variable lookups are cached so the document walk doesn't hammer the async API repeatedly.
-The old repair/manual mapping system is removed — it was compensating for the broken migration and isn't needed when the core works.
-Code
-TS 
-1771519733599_image.png
-So... I just try to run the code, and the variable was moved from collection 1 to primitives. But, the elements on the canvas using that variable color, now have broken color references
-
-5:48 PM
-I can see exactly what happened — the migration moved the variable successfully, but the fill reference on the green rectangle now shows color/brand in red (broken reference) instead of being connected to the new variable.
-
-Looking at the rewrite I gave you, there's still one critical issue I need to fix. The rebindPaints function reads boundVariables.fills to find old IDs, but at the point of reading, the old variable has already been deleted (Pass 4 runs after Pass 3, which is correct) — however the real problem is more subtle: node.boundVariables.fills is an array indexed differently than node.fills. When you read bounds[i] and match it to paints[i], that's only correct if every fill has a binding. If a node has 2 fills but only fill index 1 is bound, bounds[0] refers to fills index 1, not index 0.
-
-The Figma API returns boundVariables.fills as a sparse array keyed by fill index, but when you spread it, sparse slots become undefined and the indices collapse — so bounds[0] might actually be the binding for fills[2].
-
-Let me look at the exact structure and fix this properly:
-
-
-Review the rebindPaints function in the output file
-Review the rebindPaints function in the output file
-Yes — confirmed. The iteration for (let i = 0; i < bounds.length; i++) treats boundVariables.fills as a dense array, but it's actually a sparse object in the Figma API, where keys are the fill indices. So bounds[0] can be undefined while bounds[1] holds the actual binding, and iterating with a counter completely misses it or maps it to the wrong paint.
-
-The fix is to iterate the keys of boundVariables.fills (which are the actual fill indices as strings), not the array length:
-
-
-Fix the sparse array indexing bug in rebindPaints
-Fix the sparse array indexing bug in rebindPaints
-Now fix the same bug in rebindTextNode and rebindPaintStyle which have the same dense-iteration pattern:
-
-
-Edited 2 files, viewed 2 files, ran a command
-Edited 2 files, viewed 2 files, ran a command
-The easiest approach here is to just rewrite the whole file cleanly with all fixes applied:
-
-
-Ran 2 commands, created 2 files, read a file
-Ran 2 commands, created 2 files, read a file
-Here's what was wrong and what changed in this version:
-
-The additional bug — sparse object indexing
-
-boundVariables.fills is not a regular array — it's a sparse object where keys are the fill indices. So a node with 3 fills where only fill #2 has a variable looks like this in memory:
-
-js
-boundVariables.fills = { 2: { type: "VARIABLE_ALIAS", id: "..." } }
-The previous version iterated with for (let i = 0; i < bounds.length; i++). Since this is a sparse object, .length is either undefined or 0, so the loop runs zero times and the binding is completely skipped. Even when it does run, bounds[0] would be undefined while the real binding is at bounds[2] — so it would try to rebind the wrong paint.
-
-The fix is to use Object.entries(bounds) which gives you the actual ["2", alias] pairs, then parseInt(indexStr, 10) to get the real paint array index. This same fix was applied to rebindTextNode and rebindPaintStyle which had the identical issue.
-
-This was almost certainly the cause of the broken references you saw — the rebind was silently doing nothing (or hitting the wrong paint), then the old variable got deleted, leaving elements with a dangling reference.
-
-Code
-TS 
-The same things stille happens - variable is moved, but the color reference is broken on the canvas node/element.
-
-consoloe: [migrate] Complete — variables: 1, nodes: 0, styles: 0
-
-5:56 PM
-The console output tells us everything: 0 nodes updated. The rebind pass is running but finding nothing to rebind. That means resolveMappedId is returning undefined for every ID it sees — the IDs in boundVariables don't match what's in idMap.
-
-Let me add targeted logging to see exactly what IDs are on both sides before we fix anything:
-
-
-Check the migration pass and idMap population
-Check the migration pass and idMap population
-The issue is clear without even needing more logging. Look at the rebindAll loop — it walks figma.root.findAll() and for each node calls rebindPaints, which checks boundVariables. But the old variable has already been deleted by this point if the node has no bound variable yet — wait, no, Pass 4 (deletion) happens after Pass 3 (rebind).
-
-The real issue: idMap stores sourceVar.id → newVar.id, but sourceVar.id returned by getVariableByIdAsync may include the VariableID: prefix, while boundVariables.fills[n].id might not (or vice versa). This is the classic ID format mismatch that was in the original code too.
-
-Let me add a diagnostic-first approach — rewrite the file to log exactly what IDs are seen on the node vs what's in the map:
-
-
-Ran a command, created a file, read a file
-Ran a command, created a file, read a file
-This version has dense diagnostic logging built into the migration. When you run it, the console will tell us exactly what's going wrong. Please run it and paste the full console output — specifically I need to see:
-
-The [migrate] Mapped lines — what IDs are actually being stored in the map (and whether they have the VariableID: prefix or not)
-The [rebind] Node "..." boundVariables: lines — what the node's actual alias IDs look like
-The [rebind] No mapping for alias id: lines — if any appear, they'll show the exact mismatch
-My best guess right now is one of two things:
-
-The IDs in boundVariables on the node are in a different format than what getVariableByIdAsync returns for the source variable (prefix mismatch, or a completely different ID scheme)
-The node's boundVariables.fills is not actually a sparse object with string number keys — it might be a different structure than expected, which the debug logs will reveal
-The console output will make the fix obvious.
-
-Code
-TS 
-wow... that actually seemed to work!
-
-6:00 PM
-That's great news! The ID normalization (registerMapping storing both VariableID:X:Y and X:Y forms) was the fix — the IDs in boundVariables on nodes were in a different format than what getVariableByIdAsync returns, so every lookup was silently missing.
-
-You can now strip out all the diagnostic console.log lines since you no longer need them. Want me to clean up the file into a final production version — same logic, just without the verbose logging noise?
-
-Can you help me remove all the old debug functionality added (buttons: show ids, scan bindings, repair bindings, debug selection etc.?
-
-6:03 PM
-Let me check the UI file to see what needs to be removed.
-
-
-Viewed 3 files
-Viewed 3 files
-Good, I have everything I need. Now I'll produce clean versions of both files.
-
-
-Ran a command, created a file
-Ran a command, created a file
-Now clean up code.ts — remove all the diagnostic logging, and also strip the dead message handlers (SCAN_BINDINGS, DEBUG_SELECTION, REPAIR_BINDINGS, REPAIR_SELECTION) since the UI no longer sends them:
-
-
-Created a file, read a file
-Created a file, read a file
-Both files cleaned up. Here's what was removed:
-
-App.tsx — stripped out: showIds state + toggle button, repairOpen / repairInput / repairStatus state, the entire Repair Bindings panel, Show IDs / Scan Bindings / Repair Bindings / Debug Selection buttons, the runRepair function, MoreVertical icon import, and the showIds conditional column in the variables table.
-
-code.ts — stripped out: all console.log diagnostic lines (kept console.error for genuine failures), the scanBindings function, and the dead message handlers for SCAN_BINDINGS, DEBUG_SELECTION, REPAIR_BINDINGS, and REPAIR_SELECTION.
-
-App
-Code · TSX 
-Code
-TS 
-
-
-Want to be notified when Claude responds?
-
-
-
-
-Claude is AI and can make mistakes. Please double-check responses.
-Code · TS
-Copy
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Variable Migration Plugin – code.ts
 // ─────────────────────────────────────────────────────────────────────────────
@@ -566,7 +301,7 @@ async function rebindAll(): Promise<{ nodesUpdated: number; stylesUpdated: numbe
   let nodesUpdated = 0;
   let stylesUpdated = 0;
 
-  const allNodes = figma.root.findAll();
+  const allNodes = figma.root.findAll().filter((n): n is SceneNode => n.type !== "PAGE");
 
   for (const node of allNodes) {
     let nodeChanged = false;
@@ -705,10 +440,30 @@ figma.ui.onmessage = async (msg) => {
       msg.payload.collectionId
     );
     if (col) {
+      const firstModeId = col.modes[0]?.modeId;
       const vars = await Promise.all(
         col.variableIds.map(async (id) => {
           const v = await figma.variables.getVariableByIdAsync(id);
-          return v ? { id: v.id, name: v.name, resolvedType: v.resolvedType } : null;
+          if (!v) return null;
+          let previewValue: { kind: string; [key: string]: unknown } | undefined;
+          if (firstModeId !== undefined) {
+            const raw = v.valuesByMode[firstModeId];
+            if (isVariableAlias(raw)) {
+              const aliasVar = await figma.variables.getVariableByIdAsync(raw.id);
+              previewValue = { kind: "alias", name: aliasVar ? aliasVar.name : raw.id };
+            } else if (v.resolvedType === "COLOR" && raw && typeof raw === "object") {
+              const c = raw as { r: number; g: number; b: number };
+              const toHex = (n: number) => Math.round(n * 255).toString(16).padStart(2, "0");
+              previewValue = { kind: "color", hex: `#${toHex(c.r)}${toHex(c.g)}${toHex(c.b)}` };
+            } else if (v.resolvedType === "FLOAT" && typeof raw === "number") {
+              previewValue = { kind: "float", value: raw };
+            } else if (v.resolvedType === "BOOLEAN" && typeof raw === "boolean") {
+              previewValue = { kind: "boolean", value: raw };
+            } else if (v.resolvedType === "STRING" && typeof raw === "string") {
+              previewValue = { kind: "string", value: raw };
+            }
+          }
+          return { id: v.id, name: v.name, resolvedType: v.resolvedType, previewValue };
         })
       );
       figma.ui.postMessage({
@@ -737,10 +492,3 @@ figma.ui.onmessage = async (msg) => {
     figma.clientStorage.setAsync("plugin-size", msg.payload);
   }
 };
-
-
-
-
-
-
-Figma variable migration between collections - Claude

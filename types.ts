@@ -1,6 +1,13 @@
 
 export type VariableType = 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN';
 
+export type PreviewValue =
+  | { kind: 'alias'; name: string }
+  | { kind: 'color'; hex: string }
+  | { kind: 'float'; value: number }
+  | { kind: 'boolean'; value: boolean }
+  | { kind: 'string'; value: string };
+
 export interface Variable {
   id: string;
   name: string;
@@ -8,6 +15,7 @@ export interface Variable {
   description: string;
   valuesByMode: Record<string, any>;
   scopes: string[];
+  previewValue?: PreviewValue;
 }
 
 export interface Collection {
