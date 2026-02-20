@@ -36,7 +36,7 @@ export interface MigrationState {
   sourceCollectionId: string | null;
   selectedVariableIds: string[];
   targetCollectionId: string | null;
-  step: 'SOURCE' | 'VARIABLES' | 'TARGET' | 'MIGRATING' | 'SUCCESS';
+  step: 'VARIABLES' | 'TARGET' | 'MIGRATING' | 'SUCCESS';
 }
 
 export interface FigmaMessage {

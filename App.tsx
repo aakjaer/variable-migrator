@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   RotateCw,
   Palette,
@@ -286,13 +286,27 @@ const App: React.FC = () => {
     sourceCollectionId: null,
     selectedVariableIds: [],
     targetCollectionId: null,
-    step: "SOURCE",
+    step: "VARIABLES",
   });
   const [loading, setLoading] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<string>("");
   const [dryRun, setDryRun] = useState<DryRunState>({ status: "idle" });
   const [variablesFetchedAt, setVariablesFetchedAt] = useState(0);
   const [variablesStale, setVariablesStale] = useState(false);
+  const autoSelectedRef = useRef(false);
+
+  // Auto-select the first collection the first time collections arrive
+  useEffect(() => {
+    if (autoSelectedRef.current || collections.length === 0) return;
+    autoSelectedRef.current = true;
+    const first = collections[0];
+    setState((prev) => ({ ...prev, sourceCollectionId: first.id, selectedVariableIds: [] }));
+    setSelectedGroup("");
+    parent.postMessage(
+      { pluginMessage: { type: "GET_VARIABLES", payload: { collectionId: first.id } } },
+      "*",
+    );
+  }, [collections]);
 
   useEffect(() => {
     window.onmessage = (event) => {
@@ -325,13 +339,6 @@ const App: React.FC = () => {
     parent.postMessage({ pluginMessage: { type: "GET_DATA" } }, "*");
   }, []);
 
-  // Re-fetch collections each time the user lands on SOURCE so the list is never stale
-  useEffect(() => {
-    if (state.step === "SOURCE") {
-      parent.postMessage({ pluginMessage: { type: "GET_DATA" } }, "*");
-    }
-  }, [state.step]);
-
   const groupTree = useMemo(() => buildGroupTree(variables), [variables]);
 
   const visibleVariables = useMemo(() => {
@@ -360,8 +367,9 @@ const App: React.FC = () => {
     setState((prev) => ({
       ...prev,
       sourceCollectionId: id,
-      step: "VARIABLES",
+      selectedVariableIds: [],
     }));
+    setSelectedGroup("");
     parent.postMessage(
       {
         pluginMessage: { type: "GET_VARIABLES", payload: { collectionId: id } },
@@ -475,10 +483,6 @@ const App: React.FC = () => {
     window.addEventListener("mouseup", onMouseUp);
   };
 
-  const sourceCollection = collections.find(
-    (c) => c.id === state.sourceCollectionId,
-  );
-
   const fetchedAtLabel = variablesFetchedAt
     ? new Date(variablesFetchedAt).toLocaleTimeString([], {
         hour: "2-digit",
@@ -505,241 +509,263 @@ const App: React.FC = () => {
         />
       </header>
 
-      <main className="flex-1 overflow-hidden relative min-h-0 text-sm">
-        {/* ── Step 1: Source collection ── */}
-        {state.step === "SOURCE" && (
-          <div className="p-6 max-w-2xl mx-auto">
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold mb-1">
-                Select source collection
-              </h2>
-              <p className="text-sm text-gray-400">
-                The collection you want to move variables from
-              </p>
-            </div>
-            <div className="space-y-2">
-              {collections.map((col) => (
-                <button
-                  key={col.id}
-                  onClick={() => handleSourceSelect(col.id)}
-                  className="w-full flex items-center justify-between p-4 bg-[#1E1E1E] rounded-lg border border-[#2C2C2C] hover:border-[#7B61FF] hover:bg-[#252525] group transition-all"
-                >
-                  <span className="font-medium">{col.name}</span>
-                  <div className="flex items-center gap-4">
-                    <span className="text-gray-500 text-sm">
-                      {col.variableIds.length}
-                    </span>
-                    <ChevronRight
-                      size={18}
-                      className="text-gray-600 group-hover:text-white"
-                    />
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Step 2: Select variables ── */}
+      <main className="flex-1 overflow-hidden relative min-h-0 text-xs">
+        {/* ── Step 1+2: Collections + variables ── */}
         {state.step === "VARIABLES" && (
           <div className="flex h-full">
             {/* Sidebar */}
             <aside className="w-56 border-r border-[#2C2C2C] bg-[#121212] flex flex-col overflow-hidden shrink-0">
-              <div className="px-3 py-3 border-b border-[#2C2C2C] flex items-center gap-2">
-                <ArrowLeft
-                  size={15}
-                  className="cursor-pointer text-gray-400 hover:text-white shrink-0"
-                  onClick={() => setState((s) => ({ ...s, step: "SOURCE" }))}
-                />
-                <span className="font-semibold text-sm truncate">
-                  {sourceCollection?.name}
-                </span>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-                {/* All Variables */}
-                <div
-                  onClick={() => setSelectedGroup("")}
-                  className={`flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer text-sm transition-colors
-                    ${selectedGroup === "" ? "bg-[#2A2340] text-white" : "hover:bg-[#1E1E1E] text-gray-300"}`}
-                >
-                  <span className="w-[13px] shrink-0" />
-                  <span className="flex-1">All Variables</span>
-                  <span
-                    className={`text-xs tabular-nums shrink-0 ${selectedGroup === "" ? "text-gray-300" : "text-gray-500"}`}
-                  >
-                    {variables.length}
+              {/* Collections section */}
+              <div className="shrink-0">
+                <div className="px-3 pt-3 pb-1">
+                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                    Collections
                   </span>
-                  {state.selectedVariableIds.length === variables.length &&
-                    variables.length > 0 && (
-                      <Check
-                        size={11}
-                        className="text-[#7B61FF] ml-1 shrink-0"
-                      />
-                    )}
-                  {state.selectedVariableIds.length > 0 &&
-                    state.selectedVariableIds.length < variables.length && (
-                      <span className="w-2 h-2 rounded-sm bg-[#7B61FF]/50 ml-1 shrink-0 inline-block" />
-                    )}
                 </div>
-                {groupTree.children.map((node) => (
-                  <GroupTreeNode
-                    key={node.fullPath}
-                    node={node}
-                    depth={0}
-                    selectedGroup={selectedGroup}
-                    onSelect={setSelectedGroup}
-                    selectedVariableIds={state.selectedVariableIds}
-                  />
-                ))}
+                <div className="max-h-40 overflow-y-auto px-2 pb-2 space-y-0.5">
+                  {collections.map((col) => {
+                    const isSelected = state.sourceCollectionId === col.id;
+                    return (
+                      <div
+                        key={col.id}
+                        onClick={() => handleSourceSelect(col.id)}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer text-sm transition-colors
+                          ${isSelected ? "bg-[#2A2340] text-white" : "hover:bg-[#1E1E1E] text-gray-300"}`}
+                      >
+                        <span className="flex-1 truncate">{col.name}</span>
+                        <span
+                          className={`text-xs tabular-nums shrink-0 ${isSelected ? "text-gray-300" : "text-gray-500"}`}
+                        >
+                          {col.variableIds.length}
+                        </span>
+                        {isSelected && (
+                          <Check
+                            size={11}
+                            className="text-[#7B61FF] ml-1 shrink-0"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
+
+              {/* Groups section — only shown when a collection is active */}
+              {state.sourceCollectionId && (
+                <>
+                  <div className="h-px bg-[#2C2C2C] mb-2 shrink-0" />
+                  <div className="px-3 pt-3 pb-1">
+                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                      Groups
+                    </span>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
+                    {/* All Variables */}
+                    <div
+                      onClick={() => setSelectedGroup("")}
+                      className={`flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer text-sm transition-colors
+                        ${selectedGroup === "" ? "bg-[#2A2340] text-white" : "hover:bg-[#1E1E1E] text-gray-300"}`}
+                    >
+                      <span className="w-[13px] shrink-0" />
+                      <span className="flex-1">All</span>
+                      <span
+                        className={`text-xs tabular-nums shrink-0 ${selectedGroup === "" ? "text-gray-300" : "text-gray-500"}`}
+                      >
+                        {variables.length}
+                      </span>
+                      {state.selectedVariableIds.length === variables.length &&
+                        variables.length > 0 && (
+                          <Check
+                            size={11}
+                            className="text-[#7B61FF] ml-1 shrink-0"
+                          />
+                        )}
+                      {state.selectedVariableIds.length > 0 &&
+                        state.selectedVariableIds.length < variables.length && (
+                          <span className="w-2 h-2 rounded-sm bg-[#7B61FF]/50 ml-1 shrink-0 inline-block" />
+                        )}
+                    </div>
+                    {groupTree.children.map((node) => (
+                      <GroupTreeNode
+                        key={node.fullPath}
+                        node={node}
+                        depth={0}
+                        selectedGroup={selectedGroup}
+                        onSelect={setSelectedGroup}
+                        selectedVariableIds={state.selectedVariableIds}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
             </aside>
 
             {/* Main panel */}
             <div className="flex-1 flex flex-col overflow-hidden bg-[#0C0C0C]">
-              {/* Panel header */}
-              <div className="px-4 py-3 border-b border-[#2C2C2C] flex items-center justify-between shrink-0">
-                <span className="text-sm font-medium text-gray-300">
-                  {selectedGroup
-                    ? selectedGroup.split("/").join(" / ")
-                    : "All Variables"}
-                </span>
-                <span className="text-xs text-gray-500">
-                  {visibleVariables.length} variables
-                </span>
-              </div>
-
-              {/* Stale data banner */}
-              {variablesStale && (
-                <div className="flex items-center justify-between px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 shrink-0">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle size={12} className="text-yellow-500 shrink-0" />
-                    <span className="text-yellow-400 text-xs">Variables changed in Figma</span>
-                  </div>
-                  <button
-                    onClick={refreshData}
-                    className="text-xs text-yellow-400 hover:text-yellow-200 underline underline-offset-2 transition-colors"
-                  >
-                    Refresh
-                  </button>
+              {!state.sourceCollectionId ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <p className="text-gray-600 text-sm">
+                    Select a collection to get started
+                  </p>
                 </div>
-              )}
-
-              {/* Variable list with group headers */}
-              <div className="flex-1 overflow-y-auto">
-                {/* Sticky column header */}
-                <div className="sticky top-0 z-10 bg-[#0C0C0C] border-b border-[#1E1E1E] grid grid-cols-[2.5rem_1fr_1fr_5rem] text-gray-500 uppercase text-[10px] tracking-wider">
-                  <div className="px-4 py-2 flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      ref={(el) => {
-                        if (el)
-                          el.indeterminate =
-                            !allVisibleSelected && selectedVisible.length > 0;
-                      }}
-                      onChange={
-                        allVisibleSelected
-                          ? handleDeselectAllVisible
-                          : handleSelectAllVisible
-                      }
-                      className="w-4 h-4 cursor-pointer accent-[#7B61FF]"
-                    />
+              ) : (
+                <>
+                  {/* Panel header */}
+                  <div className="px-4 py-3 border-b border-[#2C2C2C] flex items-center justify-between shrink-0">
+                    <span className="text-sm font-medium text-gray-300">
+                      {selectedGroup
+                        ? selectedGroup.split("/").join(" / ")
+                        : "All Variables"}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {visibleVariables.length} variables
+                    </span>
                   </div>
-                  <div className="px-3 py-2">Name</div>
-                  <div className="px-3 py-2">Value</div>
-                  <div className="px-3 py-2 text-right">Type</div>
-                </div>
 
-                {/* Sections */}
-                {sections.map((section) => (
-                  <div key={section.label || "__root__"}>
-                    {/* Group header label */}
-                    {section.label && (
-                      <div className="px-4 pt-4 pb-1.5">
-                        <span className="text-xs font-semibold text-gray-400 tracking-wide">
-                          {/* Show only the last segment of a nested path */}
-                          {section.label.split("/").pop()}
+                  {/* Stale data banner */}
+                  {variablesStale && (
+                    <div className="flex items-center justify-between px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 shrink-0">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle
+                          size={12}
+                          className="text-yellow-500 shrink-0"
+                        />
+                        <span className="text-yellow-400 text-xs">
+                          Variables changed in Figma
                         </span>
                       </div>
-                    )}
-                    {/* Variable rows for this section */}
-                    {section.vars.map((v) => {
-                      const isSelected = state.selectedVariableIds.includes(
-                        v.id,
-                      );
-                      const displayName = v.name.split("/").pop()!;
-                      return (
-                        <div
-                          key={v.id}
-                          onClick={() => handleVariableToggle(v.id)}
-                          className={`grid grid-cols-[2.5rem_1fr_1fr_5rem] cursor-pointer transition-colors border-b border-[#141414]
-                            ${isSelected ? "bg-[#1A1530]" : "hover:bg-[#161616]"}`}
-                        >
-                          <div className="ps-4 py-2 flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => handleVariableToggle(v.id)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-4 h-4 cursor-pointer accent-[#7B61FF]"
-                            />
-                          </div>
-                          <div className="px-2 py-2 flex items-center gap-2 min-w-0">
-                            <TypeIcon type={v.resolvedType} />
-                            <span
-                              className={`font-medium truncate ${isSelected ? "text-white" : "text-gray-200"}`}
-                            >
-                              {displayName}
-                            </span>
-                          </div>
-                          <div className="px-3 py-2 flex items-center min-w-0">
-                            <ValueChip value={v.previewValue} />
-                          </div>
-                          <div className="px-4 py-2 flex items-center justify-end">
-                            <span className="text-gray-600 font-mono uppercase text-xs">
-                              {v.resolvedType}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-
-              {/* Footer */}
-              <footer className="px-4 py-3 bg-[#121212] border-t border-[#2C2C2C] flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-3 text-xs text-gray-400">
-                  <span className="text-gray-300 font-medium">
-                    {state.selectedVariableIds.length} selected
-                  </span>
-                  <button
-                    onClick={handleSelectAllVisible}
-                    className="hover:text-white transition-colors"
-                  >
-                    Select {selectedGroup ? "Group" : "All"}
-                  </button>
-                  <button
-                    onClick={handleDeselectAllVisible}
-                    className="hover:text-white transition-colors"
-                  >
-                    Deselect {selectedGroup ? "Group" : "All"}
-                  </button>
-                  {fetchedAtLabel && (
-                    <span className="text-gray-600">· {fetchedAtLabel}</span>
+                      <button
+                        onClick={refreshData}
+                        className="text-xs text-yellow-400 hover:text-yellow-200 underline underline-offset-2 transition-colors"
+                      >
+                        Refresh
+                      </button>
+                    </div>
                   )}
-                </div>
-                <button
-                  onClick={() => {
-                    setState((prev) => ({ ...prev, step: "TARGET" }));
-                    setDryRun({ status: "idle" });
-                  }}
-                  disabled={state.selectedVariableIds.length === 0}
-                  className="bg-[#7B61FF] px-5 py-2 rounded-md font-semibold text-sm hover:bg-[#684FF0] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                >
-                  Move To →
-                </button>
-              </footer>
+
+                  {/* Variable list with group headers */}
+                  <div className="flex-1 overflow-y-auto">
+                    {/* Sticky column header */}
+                    <div className="sticky top-0 z-10 h-9 bg-[#0C0C0C] border-b border-[#1E1E1E] grid grid-cols-[2.5rem_1fr_1fr_5rem] text-gray-500 uppercase text-[10px] tracking-wider">
+                      <div className="px-4 flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={allVisibleSelected}
+                          ref={(el) => {
+                            if (el)
+                              el.indeterminate =
+                                !allVisibleSelected &&
+                                selectedVisible.length > 0;
+                          }}
+                          onChange={
+                            allVisibleSelected
+                              ? handleDeselectAllVisible
+                              : handleSelectAllVisible
+                          }
+                          className="w-4 h-4 cursor-pointer accent-[#7B61FF]"
+                        />
+                      </div>
+                      <div className="px-3 flex items-center">Name</div>
+                      <div className="px-3 flex items-center">Value</div>
+                      <div className="px-3 flex items-center justify-end">
+                        Type
+                      </div>
+                    </div>
+
+                    {/* Sections */}
+                    {sections.map((section) => (
+                      <div key={section.label || "__root__"}>
+                        {/* Group header label */}
+                        {section.label && (
+                          <div className="px-4 pt-3 pb-1">
+                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                              {section.label.split("/").pop()}
+                            </span>
+                          </div>
+                        )}
+                        {/* Variable rows for this section */}
+                        {section.vars.map((v) => {
+                          const isSelected = state.selectedVariableIds.includes(
+                            v.id,
+                          );
+                          const displayName = v.name.split("/").pop()!;
+                          return (
+                            <div
+                              key={v.id}
+                              onClick={() => handleVariableToggle(v.id)}
+                              className={`grid grid-cols-[2.5rem_1fr_1fr_5rem] h-10 cursor-pointer transition-colors border-b border-[#1E1E1E]
+                                ${isSelected ? "bg-[#1A1530]" : "hover:bg-[#161616]"}`}
+                            >
+                              <div className="ps-4 flex items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleVariableToggle(v.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-4 h-4 cursor-pointer accent-[#7B61FF]"
+                                />
+                              </div>
+                              <div className="px-2 flex items-center gap-2 min-w-0 overflow-hidden">
+                                <TypeIcon type={v.resolvedType} />
+                                <span
+                                  className={`font-medium truncate ${isSelected ? "text-white" : "text-gray-200"}`}
+                                >
+                                  {displayName}
+                                </span>
+                              </div>
+                              <div className="px-3 flex items-center min-w-0 overflow-hidden">
+                                <ValueChip value={v.previewValue} />
+                              </div>
+                              <div className="px-4 flex items-center justify-end">
+                                <span className="text-gray-600 font-mono uppercase text-xs">
+                                  {v.resolvedType}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Footer */}
+                  <footer className="px-4 py-3 bg-[#121212] border-t border-[#2C2C2C] flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-3 text-xs text-gray-400">
+                      <span className="text-gray-300 font-medium">
+                        {state.selectedVariableIds.length} selected
+                      </span>
+                      <button
+                        onClick={handleSelectAllVisible}
+                        className="hover:text-white transition-colors"
+                      >
+                        Select {selectedGroup ? "Group" : "All"}
+                      </button>
+                      <button
+                        onClick={handleDeselectAllVisible}
+                        className="hover:text-white transition-colors"
+                      >
+                        Deselect {selectedGroup ? "Group" : "All"}
+                      </button>
+                      {fetchedAtLabel && (
+                        <span className="text-gray-600">
+                          · {fetchedAtLabel}
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setState((prev) => ({ ...prev, step: "TARGET" }));
+                        setDryRun({ status: "idle" });
+                      }}
+                      disabled={state.selectedVariableIds.length === 0}
+                      className="bg-[#7B61FF] px-5 py-2 rounded-md font-semibold text-sm hover:bg-[#684FF0] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    >
+                      Move To →
+                    </button>
+                  </footer>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -833,13 +859,20 @@ const App: React.FC = () => {
                     {dryRun.result.missingCount > 0 && (
                       <div className="px-4 py-3 border-t border-[#2C2C2C] bg-red-500/5">
                         <div className="flex items-start gap-2.5">
-                          <AlertTriangle size={13} className="text-red-400 mt-0.5 shrink-0" />
+                          <AlertTriangle
+                            size={13}
+                            className="text-red-400 mt-0.5 shrink-0"
+                          />
                           <div>
                             <p className="text-red-400 text-xs font-medium mb-0.5">
-                              {dryRun.result.missingCount} variable{dryRun.result.missingCount !== 1 ? "s" : ""} no longer exist
+                              {dryRun.result.missingCount} variable
+                              {dryRun.result.missingCount !== 1 ? "s" : ""} no
+                              longer exist
                             </p>
                             <p className="text-gray-500 text-xs">
-                              Deleted in Figma since loading. {dryRun.result.missingCount !== 1 ? "They" : "It"} will be skipped.
+                              Deleted in Figma since loading.{" "}
+                              {dryRun.result.missingCount !== 1 ? "They" : "It"}{" "}
+                              will be skipped.
                             </p>
                           </div>
                         </div>
@@ -960,8 +993,9 @@ const App: React.FC = () => {
                       sourceCollectionId: null,
                       selectedVariableIds: [],
                       targetCollectionId: null,
-                      step: "SOURCE",
+                      step: "VARIABLES",
                     });
+                    setVariables([]);
                     setDryRun({ status: "idle" });
                   }}
                   className="px-8 py-3 bg-[#1E1E1E] rounded-lg font-medium hover:bg-[#2C2C2C] transition-colors"
