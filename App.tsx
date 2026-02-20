@@ -294,6 +294,7 @@ const App: React.FC = () => {
   const [variablesFetchedAt, setVariablesFetchedAt] = useState(0);
   const [variablesStale, setVariablesStale] = useState(false);
   const autoSelectedRef = useRef(false);
+  const lastClickedIdRef = useRef<string | null>(null);
 
   // Auto-select the first collection the first time collections arrive
   useEffect(() => {
@@ -357,11 +358,6 @@ const App: React.FC = () => {
   );
 
   const visibleIds = visibleVariables.map((v) => v.id);
-  const selectedVisible = state.selectedVariableIds.filter((id) =>
-    visibleIds.includes(id),
-  );
-  const allVisibleSelected =
-    visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
 
   const handleSourceSelect = (id: string) => {
     setState((prev) => ({
@@ -378,7 +374,22 @@ const App: React.FC = () => {
     );
   };
 
-  const handleVariableToggle = (id: string) => {
+  const handleVariableToggle = (id: string, shiftKey = false) => {
+    if (shiftKey && lastClickedIdRef.current && lastClickedIdRef.current !== id) {
+      const ids = visibleVariables.map((v) => v.id);
+      const fromIdx = ids.indexOf(lastClickedIdRef.current);
+      const toIdx = ids.indexOf(id);
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const [start, end] = fromIdx < toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
+        const rangeIds = ids.slice(start, end + 1);
+        setState((prev) => ({
+          ...prev,
+          selectedVariableIds: [...new Set([...prev.selectedVariableIds, ...rangeIds])],
+        }));
+        return;
+      }
+    }
+    lastClickedIdRef.current = id;
     setState((prev) => ({
       ...prev,
       selectedVariableIds: prev.selectedVariableIds.includes(id)
@@ -538,12 +549,6 @@ const App: React.FC = () => {
                         >
                           {col.variableIds.length}
                         </span>
-                        {isSelected && (
-                          <Check
-                            size={11}
-                            className="text-[#7B61FF] ml-1 shrink-0"
-                          />
-                        )}
                       </div>
                     );
                   })}
@@ -645,32 +650,12 @@ const App: React.FC = () => {
                   )}
 
                   {/* Variable list with group headers */}
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto select-none">
                     {/* Sticky column header */}
-                    <div className="sticky top-0 z-10 h-9 bg-[#0C0C0C] border-b border-[#1E1E1E] grid grid-cols-[2.5rem_1fr_1fr_5rem] text-gray-500 uppercase text-[10px] tracking-wider">
-                      <div className="px-4 flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={allVisibleSelected}
-                          ref={(el) => {
-                            if (el)
-                              el.indeterminate =
-                                !allVisibleSelected &&
-                                selectedVisible.length > 0;
-                          }}
-                          onChange={
-                            allVisibleSelected
-                              ? handleDeselectAllVisible
-                              : handleSelectAllVisible
-                          }
-                          className="w-4 h-4 cursor-pointer accent-[#7B61FF]"
-                        />
-                      </div>
-                      <div className="px-3 flex items-center">Name</div>
+                    <div className="sticky top-0 z-10 h-9 bg-[#0C0C0C] border-b border-[#1E1E1E] grid grid-cols-[1fr_1fr_5rem] text-gray-500 uppercase text-[10px] tracking-wider">
+                      <div className="pl-4 pr-3 flex items-center">Name</div>
                       <div className="px-3 flex items-center">Value</div>
-                      <div className="px-3 flex items-center justify-end">
-                        Type
-                      </div>
+                      <div className="px-3 flex items-center justify-end">Type</div>
                     </div>
 
                     {/* Sections */}
@@ -693,20 +678,11 @@ const App: React.FC = () => {
                           return (
                             <div
                               key={v.id}
-                              onClick={() => handleVariableToggle(v.id)}
-                              className={`grid grid-cols-[2.5rem_1fr_1fr_5rem] h-10 cursor-pointer transition-colors border-b border-[#1E1E1E]
-                                ${isSelected ? "bg-[#1A1530]" : "hover:bg-[#161616]"}`}
+                              onClick={(e) => handleVariableToggle(v.id, e.shiftKey)}
+                              className={`grid grid-cols-[1fr_1fr_5rem] h-10 cursor-pointer transition-colors border-b border-[#1E1E1E]
+                                ${isSelected ? "bg-[#2A2340]" : "hover:bg-[#161616]"}`}
                             >
-                              <div className="ps-4 flex items-center">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => handleVariableToggle(v.id)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="w-4 h-4 cursor-pointer accent-[#7B61FF]"
-                                />
-                              </div>
-                              <div className="px-2 flex items-center gap-2 min-w-0 overflow-hidden">
+                              <div className="pl-4 pr-2 flex items-center gap-2 min-w-0 overflow-hidden">
                                 <TypeIcon type={v.resolvedType} />
                                 <span
                                   className={`font-medium truncate ${isSelected ? "text-white" : "text-gray-200"}`}
