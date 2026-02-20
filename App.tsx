@@ -10,8 +10,23 @@ import {
   Hash,
   ToggleLeft,
   Type,
+  AlertTriangle,
 } from "lucide-react";
-import { Collection, Variable, MigrationState, PreviewValue } from "./types";
+import {
+  Collection,
+  Variable,
+  MigrationState,
+  PreviewValue,
+  DryRunResult,
+} from "./types";
+
+// ─── Local types ──────────────────────────────────────────────────────────────
+
+type DryRunState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done"; result: DryRunResult }
+  | { status: "error"; code: string };
 
 // ─── Group tree helpers ───────────────────────────────────────────────────────
 
@@ -275,6 +290,9 @@ const App: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<string>("");
+  const [dryRun, setDryRun] = useState<DryRunState>({ status: "idle" });
+  const [variablesFetchedAt, setVariablesFetchedAt] = useState(0);
+  const [variablesStale, setVariablesStale] = useState(false);
 
   useEffect(() => {
     window.onmessage = (event) => {
@@ -285,6 +303,16 @@ const App: React.FC = () => {
       } else if (msg.type === "VARIABLES_LOADED") {
         setVariables(msg.payload);
         setSelectedGroup("");
+        setVariablesFetchedAt(Date.now());
+        setVariablesStale(false);
+      } else if (msg.type === "VARIABLES_STALE") {
+        setVariablesStale(true);
+      } else if (msg.type === "DRY_RUN_RESULT") {
+        if (msg.payload.error) {
+          setDryRun({ status: "error", code: msg.payload.error });
+        } else {
+          setDryRun({ status: "done", result: msg.payload });
+        }
       } else if (msg.type === "MIGRATION_SUCCESS") {
         setLoading(false);
         setState((prev) => ({ ...prev, step: "SUCCESS" }));
@@ -296,6 +324,13 @@ const App: React.FC = () => {
     };
     parent.postMessage({ pluginMessage: { type: "GET_DATA" } }, "*");
   }, []);
+
+  // Re-fetch collections each time the user lands on SOURCE so the list is never stale
+  useEffect(() => {
+    if (state.step === "SOURCE") {
+      parent.postMessage({ pluginMessage: { type: "GET_DATA" } }, "*");
+    }
+  }, [state.step]);
 
   const groupTree = useMemo(() => buildGroupTree(variables), [variables]);
 
@@ -364,6 +399,20 @@ const App: React.FC = () => {
 
   const handleTargetSelect = (id: string) => {
     setState((prev) => ({ ...prev, targetCollectionId: id }));
+    setDryRun({ status: "loading" });
+    parent.postMessage(
+      {
+        pluginMessage: {
+          type: "DRY_RUN",
+          payload: {
+            sourceCollectionId: state.sourceCollectionId,
+            targetCollectionId: id,
+            variableIds: state.selectedVariableIds,
+          },
+        },
+      },
+      "*",
+    );
   };
 
   const runMigration = () => {
@@ -429,6 +478,13 @@ const App: React.FC = () => {
   const sourceCollection = collections.find(
     (c) => c.id === state.sourceCollectionId,
   );
+
+  const fetchedAtLabel = variablesFetchedAt
+    ? new Date(variablesFetchedAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
 
   return (
     <div className="flex flex-col h-screen bg-[#0C0C0C] text-white overflow-hidden">
@@ -552,6 +608,22 @@ const App: React.FC = () => {
                 </span>
               </div>
 
+              {/* Stale data banner */}
+              {variablesStale && (
+                <div className="flex items-center justify-between px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle size={12} className="text-yellow-500 shrink-0" />
+                    <span className="text-yellow-400 text-xs">Variables changed in Figma</span>
+                  </div>
+                  <button
+                    onClick={refreshData}
+                    className="text-xs text-yellow-400 hover:text-yellow-200 underline underline-offset-2 transition-colors"
+                  >
+                    Refresh
+                  </button>
+                </div>
+              )}
+
               {/* Variable list with group headers */}
               <div className="flex-1 overflow-y-auto">
                 {/* Sticky column header */}
@@ -653,11 +725,15 @@ const App: React.FC = () => {
                   >
                     Deselect {selectedGroup ? "Group" : "All"}
                   </button>
+                  {fetchedAtLabel && (
+                    <span className="text-gray-600">· {fetchedAtLabel}</span>
+                  )}
                 </div>
                 <button
-                  onClick={() =>
-                    setState((prev) => ({ ...prev, step: "TARGET" }))
-                  }
+                  onClick={() => {
+                    setState((prev) => ({ ...prev, step: "TARGET" }));
+                    setDryRun({ status: "idle" });
+                  }}
                   disabled={state.selectedVariableIds.length === 0}
                   className="bg-[#7B61FF] px-5 py-2 rounded-md font-semibold text-sm hover:bg-[#684FF0] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
@@ -682,7 +758,14 @@ const App: React.FC = () => {
                 </p>
               </div>
               <button
-                onClick={() => setState((s) => ({ ...s, step: "VARIABLES" }))}
+                onClick={() => {
+                  setState((s) => ({
+                    ...s,
+                    step: "VARIABLES",
+                    targetCollectionId: null,
+                  }));
+                  setDryRun({ status: "idle" });
+                }}
                 className="p-2 rounded-full hover:bg-[#1E1E1E] transition-colors"
               >
                 <ArrowLeft size={20} />
@@ -714,12 +797,132 @@ const App: React.FC = () => {
                   </button>
                 ))}
             </div>
+            {/* Dry run results */}
+            {state.targetCollectionId && (
+              <div className="mb-4">
+                {dryRun.status === "loading" && (
+                  <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[#1A1A1A] border border-[#2C2C2C] text-sm text-gray-400">
+                    <div className="w-3.5 h-3.5 border-2 border-gray-600 border-t-[#7B61FF] rounded-full animate-spin shrink-0" />
+                    Checking migration…
+                  </div>
+                )}
+
+                {dryRun.status === "done" && (
+                  <div className="rounded-lg bg-[#1A1A1A] border border-[#2C2C2C] overflow-hidden">
+                    <div className="px-4 py-3 flex items-center gap-6 text-sm">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="font-semibold tabular-nums text-white">
+                          {dryRun.result.nodesAffected}
+                        </span>
+                        <span className="text-gray-500">
+                          node
+                          {dryRun.result.nodesAffected !== 1 ? "s" : ""}{" "}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="font-semibold tabular-nums text-white">
+                          {dryRun.result.stylesAffected}
+                        </span>
+                        <span className="text-gray-500">
+                          style
+                          {dryRun.result.stylesAffected !== 1 ? "s" : ""}{" "}
+                        </span>
+                      </div>
+                    </div>
+
+                    {dryRun.result.missingCount > 0 && (
+                      <div className="px-4 py-3 border-t border-[#2C2C2C] bg-red-500/5">
+                        <div className="flex items-start gap-2.5">
+                          <AlertTriangle size={13} className="text-red-400 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="text-red-400 text-xs font-medium mb-0.5">
+                              {dryRun.result.missingCount} variable{dryRun.result.missingCount !== 1 ? "s" : ""} no longer exist
+                            </p>
+                            <p className="text-gray-500 text-xs">
+                              Deleted in Figma since loading. {dryRun.result.missingCount !== 1 ? "They" : "It"} will be skipped.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {dryRun.result.conflictingNames.length > 0 && (
+                      <div className="px-4 py-3 border-t border-[#2C2C2C] bg-yellow-500/5">
+                        <div className="flex items-start gap-2.5">
+                          <AlertTriangle
+                            size={13}
+                            className="text-yellow-500 mt-0.5 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-yellow-400 text-xs font-medium mb-1">
+                              {dryRun.result.conflictingNames.length} name
+                              conflict
+                              {dryRun.result.conflictingNames.length !== 1
+                                ? "s"
+                                : ""}
+                            </p>
+                            <p className="text-gray-400 text-xs mb-2">
+                              These variables already exist in the target.
+                              Duplicates will be created.
+                            </p>
+                            <ul className="space-y-0.5">
+                              {dryRun.result.conflictingNames
+                                .slice(0, 5)
+                                .map((name) => (
+                                  <li
+                                    key={name}
+                                    className="text-[11px] text-gray-500 font-mono truncate"
+                                  >
+                                    · {name}
+                                  </li>
+                                ))}
+                              {dryRun.result.conflictingNames.length > 5 && (
+                                <li className="text-[11px] text-gray-600">
+                                  + {dryRun.result.conflictingNames.length - 5}{" "}
+                                  more
+                                </li>
+                              )}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {dryRun.status === "error" && (
+                  <div className="flex items-start gap-2.5 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                    <AlertTriangle
+                      size={13}
+                      className="text-red-400 mt-0.5 shrink-0"
+                    />
+                    <p className="text-red-400 text-sm">
+                      {dryRun.code === "source_missing"
+                        ? "Source collection no longer exists. Go back and refresh."
+                        : dryRun.code === "target_missing"
+                          ? "This collection no longer exists. Please select another."
+                          : "Could not check migration. Please try again."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               onClick={runMigration}
-              disabled={!state.targetCollectionId || loading}
+              disabled={
+                !state.targetCollectionId ||
+                loading ||
+                dryRun.status === "loading" ||
+                dryRun.status === "error"
+              }
               className="w-full bg-[#7B61FF] py-3 rounded-lg font-bold text-base hover:bg-[#684FF0] disabled:opacity-50 transition-all"
             >
-              {loading ? "Processing..." : "Confirm Move"}
+              {loading
+                ? "Processing..."
+                : dryRun.status === "loading"
+                  ? "Checking…"
+                  : "Confirm Move"}
             </button>
           </div>
         )}
@@ -752,14 +955,15 @@ const App: React.FC = () => {
                   your design.
                 </p>
                 <button
-                  onClick={() =>
+                  onClick={() => {
                     setState({
                       sourceCollectionId: null,
                       selectedVariableIds: [],
                       targetCollectionId: null,
                       step: "SOURCE",
-                    })
-                  }
+                    });
+                    setDryRun({ status: "idle" });
+                  }}
                   className="px-8 py-3 bg-[#1E1E1E] rounded-lg font-medium hover:bg-[#2C2C2C] transition-colors"
                 >
                   Done

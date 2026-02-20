@@ -344,6 +344,7 @@ async function migrateVariables(
   idMap.clear();
 
   // Pass 1: Create new variables in the target collection
+  let movedCount = 0;
   for (const sourceId of variableIds) {
     const sourceVar = await figma.variables.getVariableByIdAsync(sourceId);
     if (!sourceVar) continue;
@@ -363,6 +364,7 @@ async function migrateVariables(
     } catch (_) {}
 
     registerMapping(sourceVar.id, newVar.id);
+    movedCount++;
   }
 
   // Pass 2: Copy values; remap any alias targets that were also migrated
@@ -406,12 +408,29 @@ async function migrateVariables(
     if (sourceVar) sourceVar.remove();
   }
 
+  const skipped = variableIds.length - movedCount;
+  const skippedNote = skipped > 0 ? ` (${skipped} skipped — deleted before migration)` : "";
   figma.notify(
-    `Done! Moved ${variableIds.length} variable(s). Updated ${nodesUpdated} nodes, ${stylesUpdated} styles.`
+    `Done! Moved ${movedCount} variable(s)${skippedNote}. Updated ${nodesUpdated} nodes, ${stylesUpdated} styles.`
   );
 }
 
 // ─── Plugin lifecycle ─────────────────────────────────────────────────────────
+
+// Track which collection is currently loaded in the UI so we can detect
+// when its variables change behind the user's back.
+let watchedCollectionId: string | null = null;
+let watchedVariableCount: number | null = null;
+
+figma.on("documentchange", async () => {
+  if (!watchedCollectionId) return;
+  const col = await figma.variables.getVariableCollectionByIdAsync(watchedCollectionId);
+  const currentCount = col ? col.variableIds.length : null;
+  if (currentCount !== watchedVariableCount) {
+    watchedVariableCount = currentCount;
+    figma.ui.postMessage({ type: "VARIABLES_STALE" });
+  }
+});
 
 figma.on("run", async () => {
   const savedSize = await figma.clientStorage.getAsync("plugin-size");
@@ -440,6 +459,8 @@ figma.ui.onmessage = async (msg) => {
       msg.payload.collectionId
     );
     if (col) {
+      watchedCollectionId = col.id;
+      watchedVariableCount = col.variableIds.length;
       const firstModeId = col.modes[0]?.modeId;
       const vars = await Promise.all(
         col.variableIds.map(async (id) => {
@@ -470,6 +491,88 @@ figma.ui.onmessage = async (msg) => {
         type: "VARIABLES_LOADED",
         payload: vars.filter(Boolean),
       });
+    }
+  }
+
+  if (msg.type === "DRY_RUN") {
+    const { sourceCollectionId, targetCollectionId, variableIds } = msg.payload;
+    try {
+      const sourceCol = await figma.variables.getVariableCollectionByIdAsync(sourceCollectionId);
+      const targetCol = await figma.variables.getVariableCollectionByIdAsync(targetCollectionId);
+
+      if (!sourceCol) {
+        figma.ui.postMessage({ type: "DRY_RUN_RESULT", payload: { error: "source_missing" } });
+        return;
+      }
+      if (!targetCol) {
+        figma.ui.postMessage({ type: "DRY_RUN_RESULT", payload: { error: "target_missing" } });
+        return;
+      }
+
+      // Gather names of the variables being moved; track how many no longer exist
+      const movedNames = new Set<string>();
+      let missingCount = 0;
+      for (const id of variableIds) {
+        const v = await figma.variables.getVariableByIdAsync(id);
+        if (v) movedNames.add(v.name);
+        else missingCount++;
+      }
+
+      // Detect name conflicts in the target collection
+      const conflictingNames: string[] = [];
+      for (const tvId of targetCol.variableIds) {
+        const tv = await figma.variables.getVariableByIdAsync(tvId);
+        if (tv && movedNames.has(tv.name)) conflictingNames.push(tv.name);
+      }
+
+      // Build an ID set covering both normalised and raw forms for fast lookup
+      const selectedIdSet = new Set([...variableIds.map(normalise), ...variableIds.map(raw)]);
+
+      const matchesAlias = (alias: unknown): boolean =>
+        isVariableAlias(alias) && selectedIdSet.has(normalise((alias as VariableAlias).id));
+
+      const nodeReferencesAny = (node: SceneNode): boolean => {
+        const bounds = (node as any).boundVariables;
+        if (!bounds) return false;
+        for (const field of ["fills", "strokes"]) {
+          const fb = bounds[field];
+          if (fb && typeof fb === "object" && Object.values(fb).some(matchesAlias)) return true;
+        }
+        for (const prop of SINGLE_PROPS) {
+          if (matchesAlias(bounds[prop])) return true;
+        }
+        if (node.type === "TEXT") {
+          try {
+            for (const seg of node.getStyledTextSegments(["boundVariables"])) {
+              if (!seg.boundVariables) continue;
+              for (const field of ["fills", "strokes"]) {
+                const fb = (seg.boundVariables as any)[field];
+                if (fb && typeof fb === "object" && Object.values(fb).some(matchesAlias)) return true;
+              }
+            }
+          } catch (_) {}
+        }
+        return false;
+      };
+
+      const allNodes = figma.root.findAll().filter((n): n is SceneNode => n.type !== "PAGE");
+      const nodesAffected = allNodes.filter(nodeReferencesAny).length;
+
+      let stylesAffected = 0;
+      for (const style of await figma.getLocalPaintStylesAsync()) {
+        if (!("boundVariables" in style) || !style.boundVariables) continue;
+        const paints = (style.boundVariables as any).paints;
+        if (paints && typeof paints === "object" && Object.values(paints).some(matchesAlias)) {
+          stylesAffected++;
+        }
+      }
+
+      figma.ui.postMessage({
+        type: "DRY_RUN_RESULT",
+        payload: { nodesAffected, stylesAffected, conflictingNames, missingCount },
+      });
+    } catch (err: any) {
+      figma.ui.postMessage({ type: "DRY_RUN_RESULT", payload: { error: "failed", message: err.message } });
     }
   }
 

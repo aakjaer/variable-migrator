@@ -18,6 +18,13 @@ export interface Variable {
   previewValue?: PreviewValue;
 }
 
+export interface DryRunResult {
+  nodesAffected: number;
+  stylesAffected: number;
+  conflictingNames: string[];
+  missingCount: number;
+}
+
 export interface Collection {
   id: string;
   name: string;
