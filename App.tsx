@@ -5,6 +5,7 @@ import {
   Layers,
   Check,
   ArrowLeft,
+  ArrowRight,
   ChevronRight,
   ChevronDown,
   Hash,
@@ -712,8 +713,9 @@ const App: React.FC = () => {
                   )}
 
                   {/* Column header */}
-                  <div className="shrink-0 h-9 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 grid grid-cols-[1fr_1fr_5rem] font-semibold text-zinc-500 dark:text-zinc-500 uppercase text-[10px] tracking-wider">
-                    <div className="pl-4 pr-3 flex items-center">Name</div>
+                  <div className="shrink-0 h-9 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 grid grid-cols-[2.5rem_1fr_1fr_5rem] font-semibold text-zinc-500 dark:text-zinc-500 uppercase text-[10px] tracking-wider">
+                    <div />
+                    <div className="pr-3 flex items-center">Name</div>
                     <div className="px-3 flex items-center">Value</div>
                     <div className="px-3 flex items-center justify-end">
                       Type
@@ -756,14 +758,23 @@ const App: React.FC = () => {
                               onClick={(e) =>
                                 handleVariableToggle(v.id, e.shiftKey)
                               }
-                              className={`grid grid-cols-[1fr_1fr_5rem] h-10 cursor-pointer transition-colors border-t border-zinc-100 dark:border-zinc-800
+                              className={`grid grid-cols-[2.5rem_1fr_1fr_5rem] h-10 cursor-pointer transition-colors border-t border-zinc-100 dark:border-zinc-800
                                 ${
                                   isSelected
                                     ? "bg-violet-100 dark:bg-violet-950"
                                     : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
                                 }`}
                             >
-                              <div className="pl-4 pr-2 flex items-center gap-2 min-w-0 overflow-hidden">
+                              <div className="flex items-center justify-center">
+                                <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
+                                  isSelected
+                                    ? "bg-violet-500 border-violet-500"
+                                    : "border-zinc-300 dark:border-zinc-600"
+                                }`}>
+                                  {isSelected && <Check size={9} className="text-white shrink-0" />}
+                                </div>
+                              </div>
+                              <div className="pr-2 flex items-center gap-2 min-w-0 overflow-hidden">
                                 <TypeIcon type={v.resolvedType} />
                                 <span
                                   className={`truncate ${
@@ -820,9 +831,9 @@ const App: React.FC = () => {
                         setDryRun({ status: "idle" });
                       }}
                       disabled={state.selectedVariableIds.length === 0}
-                      className="bg-violet-500 px-5 py-2 rounded-md font-semibold text-sm text-white hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                      className="bg-violet-500 px-4 py-2 rounded-md font-semibold text-xs text-white hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                     >
-                      Move to
+                      Move to <ArrowRight size={12} className="inline ml-1" />
                     </button>
                   </footer>
                 </>
