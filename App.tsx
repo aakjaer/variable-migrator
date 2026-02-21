@@ -549,16 +549,14 @@ const App: React.FC = () => {
     : null;
 
   return (
-    <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white overflow-hidden">
+    <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white overflow-hidden text-xs">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 shrink-0">
+      <header className="flex items-center justify-between px-3 py-2.5 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 shrink-0">
         <div className="flex items-center gap-2">
-          <div className="bg-violet-500 p-1 rounded">
-            <Layers size={14} className="text-white" />
+          <div className="bg-zinc-900 p-1 rounded">
+            <Layers size={12} className="text-white" />
           </div>
-          <h1 className="text-sm font-semibold tracking-tight">
-            Variable Migrator
-          </h1>
+          <h1 className="font-semibold tracking-tight">Variable Migrator</h1>
         </div>
         <RotateCw
           size={18}
@@ -713,17 +711,17 @@ const App: React.FC = () => {
                     </div>
                   )}
 
+                  {/* Column header */}
+                  <div className="shrink-0 h-9 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 grid grid-cols-[1fr_1fr_5rem] font-semibold text-zinc-500 dark:text-zinc-500 uppercase text-[10px] tracking-wider">
+                    <div className="pl-4 pr-3 flex items-center">Name</div>
+                    <div className="px-3 flex items-center">Value</div>
+                    <div className="px-3 flex items-center justify-end">
+                      Type
+                    </div>
+                  </div>
+
                   {/* Variable list with group headers */}
                   <div className="flex-1 overflow-y-auto select-none">
-                    {/* Sticky column header */}
-                    <div className="sticky top-0 z-10 h-9 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 grid grid-cols-[1fr_1fr_5rem] font-semibold text-zinc-500 dark:text-zinc-500 uppercase text-[10px] tracking-wider">
-                      <div className="pl-4 pr-3 flex items-center">Name</div>
-                      <div className="px-3 flex items-center">Value</div>
-                      <div className="px-3 flex items-center justify-end">
-                        Type
-                      </div>
-                    </div>
-
                     {/* Sections */}
                     {sections.map((section) => (
                       <div key={section.label || "__root__"}>
