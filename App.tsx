@@ -89,11 +89,9 @@ function getGroupVariableIds(
 }
 
 // ─── Grouped sections builder ─────────────────────────────────────────────────
-// Converts a flat variable list into [{label, vars}] sections, inserting a
-// header whenever the group prefix changes relative to the selected sidebar group.
 
 interface Section {
-  label: string; // group label to display, or "" for ungrouped
+  label: string;
   vars: Variable[];
 }
 
@@ -134,15 +132,37 @@ function buildSections(
 const TypeIcon: React.FC<{ type: string }> = ({ type }) => {
   switch (type) {
     case "COLOR":
-      return <Palette size={13} className="text-[#7B61FF] shrink-0" />;
+      return (
+        <Palette
+          size={13}
+          className="text-violet-500 dark:text-violet-400 shrink-0"
+        />
+      );
     case "FLOAT":
-      return <Hash size={13} className="text-blue-400 shrink-0" />;
+      return (
+        <Hash size={13} className="text-blue-500 dark:text-blue-400 shrink-0" />
+      );
     case "BOOLEAN":
-      return <ToggleLeft size={13} className="text-green-400 shrink-0" />;
+      return (
+        <ToggleLeft
+          size={13}
+          className="text-emerald-500 dark:text-green-400 shrink-0"
+        />
+      );
     case "STRING":
-      return <Type size={13} className="text-yellow-400 shrink-0" />;
+      return (
+        <Type
+          size={13}
+          className="text-amber-500 dark:text-yellow-400 shrink-0"
+        />
+      );
     default:
-      return <Palette size={13} className="text-gray-500 shrink-0" />;
+      return (
+        <Palette
+          size={13}
+          className="text-zinc-400 dark:text-zinc-500 shrink-0"
+        />
+      );
   }
 };
 
@@ -154,8 +174,8 @@ const ValueChip: React.FC<{ value?: PreviewValue }> = ({ value }) => {
   if (value.kind === "alias") {
     const segments = value.name.split("/");
     return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#1E1E1E] border border-[#2C2C2C] text-gray-300 text-[12px] font-mono max-w-full min-w-0">
-        <span className="w-3 h-3 rounded-sm border border-[#3C3C3C] bg-[#2C2C2C] shrink-0" />
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-100 border border-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 text-[12px] font-mono max-w-full min-w-0">
+        <span className="w-3 h-3 rounded-sm border border-zinc-300 bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-700 shrink-0" />
         <span className="truncate">{segments.join("/")}</span>
       </span>
     );
@@ -163,9 +183,9 @@ const ValueChip: React.FC<{ value?: PreviewValue }> = ({ value }) => {
 
   if (value.kind === "color") {
     return (
-      <span className="inline-flex text-[12px] items-center gap-1.5 text-gray-300 font-mono max-w-full min-w-0">
+      <span className="inline-flex text-[12px] items-center gap-1.5 text-zinc-600 dark:text-zinc-300 font-mono max-w-full min-w-0">
         <span
-          className="w-3 h-3 rounded-sm border border-white/10 shrink-0"
+          className="w-3 h-3 rounded-sm border border-zinc-300/50 dark:border-white/10 shrink-0"
           style={{ backgroundColor: value.hex }}
         />
         <span className="truncate uppercase">{value.hex}</span>
@@ -175,7 +195,7 @@ const ValueChip: React.FC<{ value?: PreviewValue }> = ({ value }) => {
 
   if (value.kind === "float") {
     return (
-      <span className="text-gray-400 text-[12px] font-mono truncate">
+      <span className="text-zinc-500 dark:text-zinc-400 text-[12px] font-mono truncate">
         {value.value}
       </span>
     );
@@ -183,7 +203,7 @@ const ValueChip: React.FC<{ value?: PreviewValue }> = ({ value }) => {
 
   if (value.kind === "boolean") {
     return (
-      <span className="text-gray-400 text-[12px] font-mono truncate">
+      <span className="text-zinc-500 dark:text-zinc-400 text-[12px] font-mono truncate">
         {value.value ? "true" : "false"}
       </span>
     );
@@ -191,7 +211,7 @@ const ValueChip: React.FC<{ value?: PreviewValue }> = ({ value }) => {
 
   if (value.kind === "string") {
     return (
-      <span className="text-gray-400 text-[12px] font-mono truncate">
+      <span className="text-zinc-500 dark:text-zinc-400 text-[12px] font-mono truncate">
         &ldquo;{value.value}&rdquo;
       </span>
     );
@@ -232,7 +252,11 @@ const GroupTreeNode: React.FC<GroupTreeNodeProps> = ({
       <div
         onClick={() => onSelect(node.fullPath)}
         className={`flex items-center gap-1 py-1.5 pr-2 rounded cursor-pointer text-sm transition-colors
-          ${isSelected ? "bg-[#2A2340] text-white" : "hover:bg-[#1E1E1E] text-gray-300"}`}
+          ${
+            isSelected
+              ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-white"
+              : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
+          }`}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
       >
         {hasChildren ? (
@@ -241,7 +265,7 @@ const GroupTreeNode: React.FC<GroupTreeNodeProps> = ({
               e.stopPropagation();
               setOpen((o) => !o);
             }}
-            className="text-gray-500 hover:text-white transition-colors shrink-0"
+            className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors shrink-0"
           >
             {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           </span>
@@ -250,15 +274,22 @@ const GroupTreeNode: React.FC<GroupTreeNodeProps> = ({
         )}
         <span className="flex-1 truncate">{node.name}</span>
         <span
-          className={`text-xs tabular-nums shrink-0 ${isSelected ? "text-gray-300" : "text-gray-500"}`}
+          className={`text-xs tabular-nums shrink-0 ${
+            isSelected
+              ? "text-violet-600 dark:text-zinc-300"
+              : "text-zinc-400 dark:text-zinc-500"
+          }`}
         >
           {node.variableIds.length}
         </span>
         {isAllSelected && (
-          <Check size={11} className="text-[#7B61FF] ml-1 shrink-0" />
+          <Check
+            size={11}
+            className="text-violet-500 dark:text-violet-400 ml-1 shrink-0"
+          />
         )}
         {isPartial && (
-          <span className="w-2 h-2 rounded-sm bg-[#7B61FF]/50 ml-1 shrink-0 inline-block" />
+          <span className="w-2 h-2 rounded-sm bg-violet-400/50 dark:bg-violet-600/50 ml-1 shrink-0 inline-block" />
         )}
       </div>
       {open &&
@@ -518,20 +549,18 @@ const App: React.FC = () => {
     : null;
 
   return (
-    <div className="flex flex-col h-screen bg-[#0C0C0C] text-white overflow-hidden">
+    <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white overflow-hidden">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-[#2C2C2C] bg-[#121212] shrink-0">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 shrink-0">
         <div className="flex items-center gap-2">
-          <div className="bg-[#7B61FF] p-1 rounded">
+          <div className="bg-violet-500 p-1 rounded">
             <Layers size={18} className="text-white" />
           </div>
-          <h1 className="text-lg font-bold tracking-tight">
-            Variable Migrator
-          </h1>
+          <h1 className="text-lg font-bold tracking-tight">JustMoveIt</h1>
         </div>
         <RotateCw
           size={18}
-          className="text-gray-400 cursor-pointer hover:text-white transition-colors"
+          className="text-zinc-400 dark:text-zinc-500 cursor-pointer hover:text-zinc-900 dark:hover:text-white transition-colors"
           onClick={refreshData}
         />
       </header>
@@ -541,11 +570,11 @@ const App: React.FC = () => {
         {state.step === "VARIABLES" && (
           <div className="flex h-full">
             {/* Sidebar */}
-            <aside className="w-56 border-r border-[#2C2C2C] bg-[#121212] flex flex-col overflow-hidden shrink-0">
+            <aside className="w-56 border-r border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 flex flex-col overflow-hidden shrink-0">
               {/* Collections section */}
               <div className="shrink-0">
                 <div className="px-3 pt-3 pb-1">
-                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                  <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
                     Collections
                   </span>
                 </div>
@@ -557,11 +586,21 @@ const App: React.FC = () => {
                         key={col.id}
                         onClick={() => handleSourceSelect(col.id)}
                         className={`flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer transition-colors
-                          ${isSelected ? "bg-[#2A2340] text-white" : "hover:bg-[#1E1E1E] text-gray-300"}`}
+                          ${
+                            isSelected
+                              ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-white"
+                              : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
+                          }`}
                       >
-                        <span className="flex-1 truncate">{col.name}</span>
+                        <span className="flex-1 truncate text-sm">
+                          {col.name}
+                        </span>
                         <span
-                          className={`text-xs tabular-nums shrink-0 ${isSelected ? "text-gray-300" : "text-gray-500"}`}
+                          className={`text-xs tabular-nums shrink-0 ${
+                            isSelected
+                              ? "text-violet-600 dark:text-zinc-300"
+                              : "text-zinc-400 dark:text-zinc-500"
+                          }`}
                         >
                           {col.variableIds.length}
                         </span>
@@ -574,9 +613,9 @@ const App: React.FC = () => {
               {/* Groups section — only shown when a collection is active */}
               {state.sourceCollectionId && (
                 <>
-                  <div className="h-px bg-[#2C2C2C] mb-2 shrink-0" />
-                  <div className="px-3 pt-3 pb-1">
-                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                  <div className="h-px bg-zinc-200 dark:bg-zinc-700 mb-2 shrink-0" />
+                  <div className="px-3 pt-1 pb-1 shrink-0">
+                    <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
                       Groups
                     </span>
                   </div>
@@ -586,12 +625,20 @@ const App: React.FC = () => {
                     <div
                       onClick={() => setSelectedGroup("")}
                       className={`flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer text-sm transition-colors
-                        ${selectedGroup === "" ? "bg-[#2A2340] text-white" : "hover:bg-[#1E1E1E] text-gray-300"}`}
+                        ${
+                          selectedGroup === ""
+                            ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-white"
+                            : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
+                        }`}
                     >
                       <span className="w-[13px] shrink-0" />
                       <span className="flex-1">All</span>
                       <span
-                        className={`text-xs tabular-nums shrink-0 ${selectedGroup === "" ? "text-gray-300" : "text-gray-500"}`}
+                        className={`text-xs tabular-nums shrink-0 ${
+                          selectedGroup === ""
+                            ? "text-violet-600 dark:text-zinc-300"
+                            : "text-zinc-400 dark:text-zinc-500"
+                        }`}
                       >
                         {variables.length}
                       </span>
@@ -599,12 +646,12 @@ const App: React.FC = () => {
                         variables.length > 0 && (
                           <Check
                             size={11}
-                            className="text-[#7B61FF] ml-1 shrink-0"
+                            className="text-violet-500 dark:text-violet-400 ml-1 shrink-0"
                           />
                         )}
                       {state.selectedVariableIds.length > 0 &&
                         state.selectedVariableIds.length < variables.length && (
-                          <span className="w-2 h-2 rounded-sm bg-[#7B61FF]/50 ml-1 shrink-0 inline-block" />
+                          <span className="w-2 h-2 rounded-sm bg-violet-400/50 dark:bg-violet-600/50 ml-1 shrink-0 inline-block" />
                         )}
                     </div>
                     {groupTree.children.map((node) => (
@@ -623,23 +670,23 @@ const App: React.FC = () => {
             </aside>
 
             {/* Main panel */}
-            <div className="flex-1 flex flex-col overflow-hidden bg-[#0C0C0C]">
+            <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-zinc-950">
               {!state.sourceCollectionId ? (
                 <div className="flex-1 flex items-center justify-center">
-                  <p className="text-gray-600 text-sm">
+                  <p className="text-zinc-400 dark:text-zinc-600 text-sm">
                     Select a collection to get started
                   </p>
                 </div>
               ) : (
                 <>
                   {/* Panel header */}
-                  <div className="px-4 py-3 border-b border-[#2C2C2C] flex items-center justify-between shrink-0">
-                    <span className="text-sm font-medium text-gray-300">
+                  <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between shrink-0">
+                    <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                       {selectedGroup
                         ? selectedGroup.split("/").join(" / ")
                         : "All Variables"}
                     </span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-zinc-400 dark:text-zinc-500">
                       {visibleVariables.length} variables
                     </span>
                   </div>
@@ -652,13 +699,13 @@ const App: React.FC = () => {
                           size={12}
                           className="text-yellow-500 shrink-0"
                         />
-                        <span className="text-yellow-400 text-xs">
+                        <span className="text-yellow-600 dark:text-yellow-400 text-xs">
                           Variables changed in Figma
                         </span>
                       </div>
                       <button
                         onClick={refreshData}
-                        className="text-xs text-yellow-400 hover:text-yellow-200 underline underline-offset-2 transition-colors"
+                        className="text-xs text-yellow-600 dark:text-yellow-400 hover:text-yellow-800 dark:hover:text-yellow-200 underline underline-offset-2 transition-colors"
                       >
                         Refresh
                       </button>
@@ -668,7 +715,7 @@ const App: React.FC = () => {
                   {/* Variable list with group headers */}
                   <div className="flex-1 overflow-y-auto select-none">
                     {/* Sticky column header */}
-                    <div className="sticky top-0 z-10 h-9 bg-[#0C0C0C] border-b border-[#1E1E1E] grid grid-cols-[1fr_1fr_5rem] text-gray-500 uppercase text-[10px] tracking-wider">
+                    <div className="sticky top-0 z-10 h-9 bg-white dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800 grid grid-cols-[1fr_1fr_5rem] text-zinc-400 dark:text-zinc-500 uppercase text-[10px] tracking-wider">
                       <div className="pl-4 pr-3 flex items-center">Name</div>
                       <div className="px-3 flex items-center">Value</div>
                       <div className="px-3 flex items-center justify-end">
@@ -682,7 +729,7 @@ const App: React.FC = () => {
                         {/* Group header label */}
                         {section.label && (
                           <div className="px-4 pt-3 pb-1">
-                            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                            <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
                               {section.label.split("/").pop()}
                             </span>
                           </div>
@@ -699,13 +746,21 @@ const App: React.FC = () => {
                               onClick={(e) =>
                                 handleVariableToggle(v.id, e.shiftKey)
                               }
-                              className={`grid grid-cols-[1fr_1fr_5rem] h-10 cursor-pointer transition-colors border-b border-[#1E1E1E]
-                                ${isSelected ? "bg-[#2A2340]" : "hover:bg-[#161616]"}`}
+                              className={`grid grid-cols-[1fr_1fr_5rem] h-10 cursor-pointer transition-colors border-b border-zinc-100 dark:border-zinc-800
+                                ${
+                                  isSelected
+                                    ? "bg-violet-100 dark:bg-violet-950"
+                                    : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                                }`}
                             >
                               <div className="pl-4 pr-2 flex items-center gap-2 min-w-0 overflow-hidden">
                                 <TypeIcon type={v.resolvedType} />
                                 <span
-                                  className={`font-medium truncate ${isSelected ? "text-white" : "text-gray-200"}`}
+                                  className={`font-medium truncate ${
+                                    isSelected
+                                      ? "text-violet-900 dark:text-white"
+                                      : "text-zinc-700 dark:text-zinc-200"
+                                  }`}
                                 >
                                   {displayName}
                                 </span>
@@ -714,7 +769,7 @@ const App: React.FC = () => {
                                 <ValueChip value={v.previewValue} />
                               </div>
                               <div className="px-4 flex items-center justify-end">
-                                <span className="text-gray-600 font-mono uppercase text-xs">
+                                <span className="text-zinc-400 dark:text-zinc-600 font-mono uppercase text-xs">
                                   {v.resolvedType}
                                 </span>
                               </div>
@@ -726,25 +781,25 @@ const App: React.FC = () => {
                   </div>
 
                   {/* Footer */}
-                  <footer className="px-4 py-3 bg-[#121212] border-t border-[#2C2C2C] flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-3 text-xs text-gray-400">
-                      <span className="text-gray-300 font-medium">
+                  <footer className="px-4 py-3 bg-zinc-50 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-700 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+                      <span className="text-zinc-700 dark:text-zinc-300 font-medium">
                         {state.selectedVariableIds.length} selected
                       </span>
                       <button
                         onClick={handleSelectAllVisible}
-                        className="hover:text-white transition-colors"
+                        className="hover:text-zinc-900 dark:hover:text-white transition-colors"
                       >
                         Select {selectedGroup ? "Group" : "All"}
                       </button>
                       <button
                         onClick={handleDeselectAllVisible}
-                        className="hover:text-white transition-colors"
+                        className="hover:text-zinc-900 dark:hover:text-white transition-colors"
                       >
                         Deselect {selectedGroup ? "Group" : "All"}
                       </button>
                       {fetchedAtLabel && (
-                        <span className="text-gray-600">
+                        <span className="text-zinc-400 dark:text-zinc-600">
                           · {fetchedAtLabel}
                         </span>
                       )}
@@ -755,7 +810,7 @@ const App: React.FC = () => {
                         setDryRun({ status: "idle" });
                       }}
                       disabled={state.selectedVariableIds.length === 0}
-                      className="bg-[#7B61FF] px-5 py-2 rounded-md font-semibold text-sm hover:bg-[#684FF0] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                      className="bg-violet-500 px-5 py-2 rounded-md font-semibold text-sm text-white hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                     >
                       Move To →
                     </button>
@@ -774,7 +829,7 @@ const App: React.FC = () => {
                 <h2 className="text-xl font-semibold mb-1">
                   Select destination collection
                 </h2>
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">
                   Moving {state.selectedVariableIds.length} variable
                   {state.selectedVariableIds.length !== 1 ? "s" : ""}
                 </p>
@@ -788,7 +843,7 @@ const App: React.FC = () => {
                   }));
                   setDryRun({ status: "idle" });
                 }}
-                className="p-2 rounded-full hover:bg-[#1E1E1E] transition-colors"
+                className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
               >
                 <ArrowLeft size={20} />
               </button>
@@ -803,17 +858,17 @@ const App: React.FC = () => {
                     className={`w-full flex items-center justify-between p-4 rounded-lg border transition-all
                       ${
                         state.targetCollectionId === col.id
-                          ? "border-[#7B61FF] bg-[#211B3D]"
-                          : "bg-[#1E1E1E] border-[#2C2C2C] hover:border-gray-500"
+                          ? "border-violet-500 bg-violet-50 dark:bg-violet-950"
+                          : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-500"
                       }`}
                   >
                     <span className="font-medium">{col.name}</span>
                     <div className="flex items-center gap-4">
-                      <span className="text-gray-500 text-sm">
+                      <span className="text-zinc-400 dark:text-zinc-500 text-sm">
                         {col.variableIds.length}
                       </span>
                       {state.targetCollectionId === col.id && (
-                        <Check size={18} className="text-[#7B61FF]" />
+                        <Check size={18} className="text-violet-500" />
                       )}
                     </div>
                   </button>
@@ -823,29 +878,29 @@ const App: React.FC = () => {
             {state.targetCollectionId && (
               <div className="mb-4">
                 {dryRun.status === "loading" && (
-                  <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[#1A1A1A] border border-[#2C2C2C] text-sm text-gray-400">
-                    <div className="w-3.5 h-3.5 border-2 border-gray-600 border-t-[#7B61FF] rounded-full animate-spin shrink-0" />
+                  <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-500 dark:text-zinc-400">
+                    <div className="w-3.5 h-3.5 border-2 border-zinc-300 dark:border-zinc-600 border-t-violet-500 rounded-full animate-spin shrink-0" />
                     Checking migration…
                   </div>
                 )}
 
                 {dryRun.status === "done" && (
-                  <div className="rounded-lg bg-[#1A1A1A] border border-[#2C2C2C] overflow-hidden">
+                  <div className="rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 overflow-hidden">
                     <div className="px-4 py-3 flex items-center gap-6 text-sm">
                       <div className="flex items-baseline gap-1.5">
-                        <span className="font-semibold tabular-nums text-white">
+                        <span className="font-semibold tabular-nums text-zinc-900 dark:text-white">
                           {dryRun.result.nodesAffected}
                         </span>
-                        <span className="text-gray-500">
+                        <span className="text-zinc-400 dark:text-zinc-500">
                           node
                           {dryRun.result.nodesAffected !== 1 ? "s" : ""}{" "}
                         </span>
                       </div>
                       <div className="flex items-baseline gap-1.5">
-                        <span className="font-semibold tabular-nums text-white">
+                        <span className="font-semibold tabular-nums text-zinc-900 dark:text-white">
                           {dryRun.result.stylesAffected}
                         </span>
-                        <span className="text-gray-500">
+                        <span className="text-zinc-400 dark:text-zinc-500">
                           style
                           {dryRun.result.stylesAffected !== 1 ? "s" : ""}{" "}
                         </span>
@@ -853,19 +908,19 @@ const App: React.FC = () => {
                     </div>
 
                     {dryRun.result.missingCount > 0 && (
-                      <div className="px-4 py-3 border-t border-[#2C2C2C] bg-red-500/5">
+                      <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-700 bg-red-500/5">
                         <div className="flex items-start gap-2.5">
                           <AlertTriangle
                             size={13}
-                            className="text-red-400 mt-0.5 shrink-0"
+                            className="text-red-500 dark:text-red-400 mt-0.5 shrink-0"
                           />
                           <div>
-                            <p className="text-red-400 text-xs font-medium mb-0.5">
+                            <p className="text-red-500 dark:text-red-400 text-xs font-medium mb-0.5">
                               {dryRun.result.missingCount} variable
                               {dryRun.result.missingCount !== 1 ? "s" : ""} no
                               longer exist
                             </p>
-                            <p className="text-gray-500 text-xs">
+                            <p className="text-zinc-500 dark:text-zinc-500 text-xs">
                               Deleted in Figma since loading.{" "}
                               {dryRun.result.missingCount !== 1 ? "They" : "It"}{" "}
                               will be skipped.
@@ -876,21 +931,21 @@ const App: React.FC = () => {
                     )}
 
                     {dryRun.result.conflictingNames.length > 0 && (
-                      <div className="px-4 py-3 border-t border-[#2C2C2C] bg-yellow-500/5">
+                      <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-700 bg-yellow-500/5">
                         <div className="flex items-start gap-2.5">
                           <AlertTriangle
                             size={13}
                             className="text-yellow-500 mt-0.5 shrink-0"
                           />
                           <div className="min-w-0">
-                            <p className="text-yellow-400 text-xs font-medium mb-1">
+                            <p className="text-yellow-600 dark:text-yellow-400 text-xs font-medium mb-1">
                               {dryRun.result.conflictingNames.length} name
                               conflict
                               {dryRun.result.conflictingNames.length !== 1
                                 ? "s"
                                 : ""}
                             </p>
-                            <p className="text-gray-400 text-xs mb-2">
+                            <p className="text-zinc-500 dark:text-zinc-400 text-xs mb-2">
                               These variables already exist in the target.
                               Duplicates will be created.
                             </p>
@@ -900,13 +955,13 @@ const App: React.FC = () => {
                                 .map((name) => (
                                   <li
                                     key={name}
-                                    className="text-[11px] text-gray-500 font-mono truncate"
+                                    className="text-[11px] text-zinc-500 font-mono truncate"
                                   >
                                     · {name}
                                   </li>
                                 ))}
                               {dryRun.result.conflictingNames.length > 5 && (
-                                <li className="text-[11px] text-gray-600">
+                                <li className="text-[11px] text-zinc-400 dark:text-zinc-600">
                                   + {dryRun.result.conflictingNames.length - 5}{" "}
                                   more
                                 </li>
@@ -923,9 +978,9 @@ const App: React.FC = () => {
                   <div className="flex items-start gap-2.5 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20">
                     <AlertTriangle
                       size={13}
-                      className="text-red-400 mt-0.5 shrink-0"
+                      className="text-red-500 dark:text-red-400 mt-0.5 shrink-0"
                     />
-                    <p className="text-red-400 text-sm">
+                    <p className="text-red-500 dark:text-red-400 text-sm">
                       {dryRun.code === "source_missing"
                         ? "Source collection no longer exists. Go back and refresh."
                         : dryRun.code === "target_missing"
@@ -945,7 +1000,7 @@ const App: React.FC = () => {
                 dryRun.status === "loading" ||
                 dryRun.status === "error"
               }
-              className="w-full bg-[#7B61FF] py-3 rounded-lg font-bold text-base hover:bg-[#684FF0] disabled:opacity-50 transition-all"
+              className="w-full bg-violet-500 py-3 rounded-lg font-bold text-base text-white hover:bg-violet-600 disabled:opacity-50 transition-all"
             >
               {loading
                 ? "Processing..."
@@ -961,25 +1016,25 @@ const App: React.FC = () => {
           <div className="flex flex-col items-center justify-center h-full p-6 text-center">
             {state.step === "MIGRATING" ? (
               <>
-                <div className="w-16 h-16 border-4 border-[#7B61FF] border-t-transparent rounded-full animate-spin mb-6" />
+                <div className="w-16 h-16 border-4 border-violet-500 border-t-transparent rounded-full animate-spin mb-6" />
                 <h2 className="text-2xl font-bold mb-2">
                   Migrating Variables...
                 </h2>
-                <p className="text-gray-400 max-w-sm">
+                <p className="text-zinc-500 dark:text-zinc-400 max-w-sm">
                   Moving variables and updating all references across your
                   design.
                 </p>
-                <div className="w-full max-w-xs mt-8 h-2 bg-[#1E1E1E] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#7B61FF] animate-pulse w-[65%]" />
+                <div className="w-full max-w-xs mt-8 h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-violet-500 animate-pulse w-[65%]" />
                 </div>
               </>
             ) : (
               <>
-                <div className="w-20 h-20 bg-[#211B3D] border border-[#7B61FF] rounded-full flex items-center justify-center mb-6">
-                  <Check size={40} className="text-[#7B61FF]" />
+                <div className="w-20 h-20 bg-violet-50 dark:bg-violet-950 border border-violet-500 rounded-full flex items-center justify-center mb-6">
+                  <Check size={40} className="text-violet-500" />
                 </div>
                 <h2 className="text-2xl font-bold mb-2">Migration Complete!</h2>
-                <p className="text-gray-400 max-w-sm mb-8">
+                <p className="text-zinc-500 dark:text-zinc-400 max-w-sm mb-8">
                   All variables have been moved and references updated across
                   your design.
                 </p>
@@ -994,7 +1049,7 @@ const App: React.FC = () => {
                     setVariables([]);
                     setDryRun({ status: "idle" });
                   }}
-                  className="px-8 py-3 bg-[#1E1E1E] rounded-lg font-medium hover:bg-[#2C2C2C] transition-colors"
+                  className="px-8 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg font-medium text-zinc-800 dark:text-white hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
                 >
                   Done
                 </button>
@@ -1007,22 +1062,12 @@ const App: React.FC = () => {
       {/* Resize handle */}
       <div
         onMouseDown={startResizing}
-        className="absolute bottom-1 right-1 w-4 h-4 cursor-nwse-resize z-50 flex items-end justify-end p-0.5"
-        style={{
-          background:
-            "linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.05) 50%)",
-        }}
+        className="absolute bottom-1 right-1 w-4 h-4 cursor-nwse-resize z-50 flex items-end justify-end p-0.5 text-zinc-300 dark:text-zinc-600"
       >
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          fill="none"
-          style={{ opacity: 0.4 }}
-        >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
           <path
             d="M10 0L0 10M10 4L4 10M10 8L8 10"
-            stroke="white"
+            stroke="currentColor"
             strokeWidth="1"
           />
         </svg>
