@@ -301,10 +301,19 @@ const App: React.FC = () => {
     if (autoSelectedRef.current || collections.length === 0) return;
     autoSelectedRef.current = true;
     const first = collections[0];
-    setState((prev) => ({ ...prev, sourceCollectionId: first.id, selectedVariableIds: [] }));
+    setState((prev) => ({
+      ...prev,
+      sourceCollectionId: first.id,
+      selectedVariableIds: [],
+    }));
     setSelectedGroup("");
     parent.postMessage(
-      { pluginMessage: { type: "GET_VARIABLES", payload: { collectionId: first.id } } },
+      {
+        pluginMessage: {
+          type: "GET_VARIABLES",
+          payload: { collectionId: first.id },
+        },
+      },
       "*",
     );
   }, [collections]);
@@ -375,16 +384,23 @@ const App: React.FC = () => {
   };
 
   const handleVariableToggle = (id: string, shiftKey = false) => {
-    if (shiftKey && lastClickedIdRef.current && lastClickedIdRef.current !== id) {
+    if (
+      shiftKey &&
+      lastClickedIdRef.current &&
+      lastClickedIdRef.current !== id
+    ) {
       const ids = visibleVariables.map((v) => v.id);
       const fromIdx = ids.indexOf(lastClickedIdRef.current);
       const toIdx = ids.indexOf(id);
       if (fromIdx !== -1 && toIdx !== -1) {
-        const [start, end] = fromIdx < toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
+        const [start, end] =
+          fromIdx < toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
         const rangeIds = ids.slice(start, end + 1);
         setState((prev) => ({
           ...prev,
-          selectedVariableIds: [...new Set([...prev.selectedVariableIds, ...rangeIds])],
+          selectedVariableIds: [
+            ...new Set([...prev.selectedVariableIds, ...rangeIds]),
+          ],
         }));
         return;
       }
@@ -540,7 +556,7 @@ const App: React.FC = () => {
                       <div
                         key={col.id}
                         onClick={() => handleSourceSelect(col.id)}
-                        className={`flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer text-sm transition-colors
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer transition-colors
                           ${isSelected ? "bg-[#2A2340] text-white" : "hover:bg-[#1E1E1E] text-gray-300"}`}
                       >
                         <span className="flex-1 truncate">{col.name}</span>
@@ -655,7 +671,9 @@ const App: React.FC = () => {
                     <div className="sticky top-0 z-10 h-9 bg-[#0C0C0C] border-b border-[#1E1E1E] grid grid-cols-[1fr_1fr_5rem] text-gray-500 uppercase text-[10px] tracking-wider">
                       <div className="pl-4 pr-3 flex items-center">Name</div>
                       <div className="px-3 flex items-center">Value</div>
-                      <div className="px-3 flex items-center justify-end">Type</div>
+                      <div className="px-3 flex items-center justify-end">
+                        Type
+                      </div>
                     </div>
 
                     {/* Sections */}
@@ -678,7 +696,9 @@ const App: React.FC = () => {
                           return (
                             <div
                               key={v.id}
-                              onClick={(e) => handleVariableToggle(v.id, e.shiftKey)}
+                              onClick={(e) =>
+                                handleVariableToggle(v.id, e.shiftKey)
+                              }
                               className={`grid grid-cols-[1fr_1fr_5rem] h-10 cursor-pointer transition-colors border-b border-[#1E1E1E]
                                 ${isSelected ? "bg-[#2A2340]" : "hover:bg-[#161616]"}`}
                             >
