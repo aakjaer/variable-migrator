@@ -135,32 +135,32 @@ const TypeIcon: React.FC<{ type: string }> = ({ type }) => {
       return (
         <Palette
           size={13}
-          className="text-violet-500 dark:text-violet-400 shrink-0"
+          className="text-green-600 dark:text-violet-400 shrink-0"
         />
       );
     case "FLOAT":
       return (
-        <Hash size={13} className="text-blue-500 dark:text-blue-400 shrink-0" />
+        <Hash size={13} className="text-blue-600 dark:text-blue-400 shrink-0" />
       );
     case "BOOLEAN":
       return (
         <ToggleLeft
           size={13}
-          className="text-emerald-500 dark:text-green-400 shrink-0"
+          className="text-emerald-600 dark:text-green-400 shrink-0"
         />
       );
     case "STRING":
       return (
         <Type
           size={13}
-          className="text-amber-500 dark:text-yellow-400 shrink-0"
+          className="text-amber-600 dark:text-yellow-400 shrink-0"
         />
       );
     default:
       return (
         <Palette
           size={13}
-          className="text-zinc-400 dark:text-zinc-500 shrink-0"
+          className="text-zinc-500 dark:text-zinc-500 shrink-0"
         />
       );
   }
@@ -251,7 +251,7 @@ const GroupTreeNode: React.FC<GroupTreeNodeProps> = ({
     <div>
       <div
         onClick={() => onSelect(node.fullPath)}
-        className={`flex items-center gap-1 py-1.5 pr-2 rounded cursor-pointer text-sm transition-colors
+        className={`flex items-center gap-1 py-1.5 pr-2 rounded cursor-pointer transition-colors
           ${
             isSelected
               ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-white"
@@ -551,12 +551,14 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white overflow-hidden">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 shrink-0">
+      <header className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 shrink-0">
         <div className="flex items-center gap-2">
           <div className="bg-violet-500 p-1 rounded">
-            <Layers size={18} className="text-white" />
+            <Layers size={14} className="text-white" />
           </div>
-          <h1 className="text-lg font-bold tracking-tight">JustMoveIt</h1>
+          <h1 className="text-sm font-semibold tracking-tight">
+            Variable Migrator
+          </h1>
         </div>
         <RotateCw
           size={18}
@@ -571,14 +573,14 @@ const App: React.FC = () => {
           <div className="flex h-full">
             {/* Sidebar */}
             <aside className="w-56 border-r border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 flex flex-col overflow-hidden shrink-0">
-              {/* Collections section */}
-              <div className="shrink-0">
+              <div className="flex-1 overflow-y-auto">
+                {/* Collections section */}
                 <div className="px-3 pt-3 pb-1">
                   <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
                     Collections
                   </span>
                 </div>
-                <div className="max-h-40 overflow-y-auto px-2 pb-2 space-y-0.5">
+                <div className="px-2 pb-2 space-y-0.5">
                   {collections.map((col) => {
                     const isSelected = state.sourceCollectionId === col.id;
                     return (
@@ -592,9 +594,7 @@ const App: React.FC = () => {
                               : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
                           }`}
                       >
-                        <span className="flex-1 truncate text-sm">
-                          {col.name}
-                        </span>
+                        <span className="flex-1 truncate">{col.name}</span>
                         <span
                           className={`text-xs tabular-nums shrink-0 ${
                             isSelected
@@ -608,80 +608,81 @@ const App: React.FC = () => {
                     );
                   })}
                 </div>
-              </div>
 
-              {/* Groups section — only shown when a collection is active */}
-              {state.sourceCollectionId && (
-                <>
-                  <div className="h-px bg-zinc-200 dark:bg-zinc-700 mb-2 shrink-0" />
-                  <div className="px-3 pt-1 pb-1 shrink-0">
-                    <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
-                      Groups
-                    </span>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
-                    {/* All Variables */}
-                    <div
-                      onClick={() => setSelectedGroup("")}
-                      className={`flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer text-sm transition-colors
-                        ${
-                          selectedGroup === ""
-                            ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-white"
-                            : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
-                        }`}
-                    >
-                      <span className="w-[13px] shrink-0" />
-                      <span className="flex-1">All</span>
-                      <span
-                        className={`text-xs tabular-nums shrink-0 ${
-                          selectedGroup === ""
-                            ? "text-violet-600 dark:text-zinc-300"
-                            : "text-zinc-400 dark:text-zinc-500"
-                        }`}
-                      >
-                        {variables.length}
+                {/* Groups section — only shown when a collection is active */}
+                {state.sourceCollectionId && (
+                  <>
+                    <div className="h-px bg-zinc-200 dark:bg-zinc-700 mb-2" />
+                    <div className="px-3 pt-1 pb-1">
+                      <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+                        Groups
                       </span>
-                      {state.selectedVariableIds.length === variables.length &&
-                        variables.length > 0 && (
-                          <Check
-                            size={11}
-                            className="text-violet-500 dark:text-violet-400 ml-1 shrink-0"
-                          />
-                        )}
-                      {state.selectedVariableIds.length > 0 &&
-                        state.selectedVariableIds.length < variables.length && (
-                          <span className="w-2 h-2 rounded-sm bg-violet-400/50 dark:bg-violet-600/50 ml-1 shrink-0 inline-block" />
-                        )}
                     </div>
-                    {groupTree.children.map((node) => (
-                      <GroupTreeNode
-                        key={node.fullPath}
-                        node={node}
-                        depth={0}
-                        selectedGroup={selectedGroup}
-                        onSelect={setSelectedGroup}
-                        selectedVariableIds={state.selectedVariableIds}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
+                    <div className="px-2 pb-2 space-y-0.5">
+                      {/* All Variables */}
+                      <div
+                        onClick={() => setSelectedGroup("")}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer transition-colors
+                          ${
+                            selectedGroup === ""
+                              ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-white"
+                              : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300"
+                          }`}
+                      >
+                        <span className="w-[13px] shrink-0" />
+                        <span className="flex-1">All</span>
+                        <span
+                          className={`text-xs tabular-nums shrink-0 ${
+                            selectedGroup === ""
+                              ? "text-violet-600 dark:text-zinc-300"
+                              : "text-zinc-400 dark:text-zinc-500"
+                          }`}
+                        >
+                          {variables.length}
+                        </span>
+                        {state.selectedVariableIds.length ===
+                          variables.length &&
+                          variables.length > 0 && (
+                            <Check
+                              size={11}
+                              className="text-violet-500 dark:text-violet-400 ml-1 shrink-0"
+                            />
+                          )}
+                        {state.selectedVariableIds.length > 0 &&
+                          state.selectedVariableIds.length <
+                            variables.length && (
+                            <span className="w-2 h-2 rounded-sm bg-violet-400/50 dark:bg-violet-600/50 ml-1 shrink-0 inline-block" />
+                          )}
+                      </div>
+                      {groupTree.children.map((node) => (
+                        <GroupTreeNode
+                          key={node.fullPath}
+                          node={node}
+                          depth={0}
+                          selectedGroup={selectedGroup}
+                          onSelect={setSelectedGroup}
+                          selectedVariableIds={state.selectedVariableIds}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </aside>
 
             {/* Main panel */}
             <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-zinc-950">
               {!state.sourceCollectionId ? (
                 <div className="flex-1 flex items-center justify-center">
-                  <p className="text-zinc-400 dark:text-zinc-600 text-sm">
+                  <p className="text-zinc-400 dark:text-zinc-600 text-xs">
                     Select a collection to get started
                   </p>
                 </div>
               ) : (
                 <>
                   {/* Panel header */}
-                  <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between shrink-0">
-                    <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-700 flex items-center justify-between shrink-0">
+                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
                       {selectedGroup
                         ? selectedGroup.split("/").join(" / ")
                         : "All Variables"}
@@ -715,7 +716,7 @@ const App: React.FC = () => {
                   {/* Variable list with group headers */}
                   <div className="flex-1 overflow-y-auto select-none">
                     {/* Sticky column header */}
-                    <div className="sticky top-0 z-10 h-9 bg-white dark:bg-zinc-950 border-b border-zinc-100 dark:border-zinc-800 grid grid-cols-[1fr_1fr_5rem] text-zinc-400 dark:text-zinc-500 uppercase text-[10px] tracking-wider">
+                    <div className="sticky top-0 z-10 h-9 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 grid grid-cols-[1fr_1fr_5rem] font-semibold text-zinc-500 dark:text-zinc-500 uppercase text-[10px] tracking-wider">
                       <div className="pl-4 pr-3 flex items-center">Name</div>
                       <div className="px-3 flex items-center">Value</div>
                       <div className="px-3 flex items-center justify-end">
@@ -727,13 +728,24 @@ const App: React.FC = () => {
                     {sections.map((section) => (
                       <div key={section.label || "__root__"}>
                         {/* Group header label */}
-                        {section.label && (
-                          <div className="px-4 pt-3 pb-1">
-                            <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
-                              {section.label.split("/").pop()}
-                            </span>
-                          </div>
-                        )}
+                        {section.label &&
+                          (() => {
+                            const parts = section.label.split("/");
+                            const prefix = parts.slice(0, -1).join(" / ");
+                            const last = parts[parts.length - 1];
+                            return (
+                              <div className="px-4 pt-6 pb-2">
+                                {prefix && (
+                                  <span className="font-semibold text-zinc-400 dark:text-zinc-500">
+                                    {prefix} /{" "}
+                                  </span>
+                                )}
+                                <span className="font-semibold text-zinc-700 dark:text-zinc-200">
+                                  {last}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         {/* Variable rows for this section */}
                         {section.vars.map((v) => {
                           const isSelected = state.selectedVariableIds.includes(
@@ -746,7 +758,7 @@ const App: React.FC = () => {
                               onClick={(e) =>
                                 handleVariableToggle(v.id, e.shiftKey)
                               }
-                              className={`grid grid-cols-[1fr_1fr_5rem] h-10 cursor-pointer transition-colors border-b border-zinc-100 dark:border-zinc-800
+                              className={`grid grid-cols-[1fr_1fr_5rem] h-10 cursor-pointer transition-colors border-t border-zinc-100 dark:border-zinc-800
                                 ${
                                   isSelected
                                     ? "bg-violet-100 dark:bg-violet-950"
@@ -756,7 +768,7 @@ const App: React.FC = () => {
                               <div className="pl-4 pr-2 flex items-center gap-2 min-w-0 overflow-hidden">
                                 <TypeIcon type={v.resolvedType} />
                                 <span
-                                  className={`font-medium truncate ${
+                                  className={`truncate ${
                                     isSelected
                                       ? "text-violet-900 dark:text-white"
                                       : "text-zinc-700 dark:text-zinc-200"
@@ -812,7 +824,7 @@ const App: React.FC = () => {
                       disabled={state.selectedVariableIds.length === 0}
                       className="bg-violet-500 px-5 py-2 rounded-md font-semibold text-sm text-white hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                     >
-                      Move To →
+                      Move to
                     </button>
                   </footer>
                 </>

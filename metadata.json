@@ -1,5 +1,5 @@
 {
-  "name": "FigSystem Variable Migrator",
-  "description": "A professional-grade Figma plugin for migrating variables between collections with absolute data integrity and global node rebinding.",
+  "name": "Figma Variable Migrator",
+  "description": "Move variables between collections while preserving their connections to nodes and styles.",
   "requestFramePermissions": []
 }

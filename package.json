@@ -1,5 +1,5 @@
 {
-  "name": "figsystem-variable-migrator",
+  "name": "figma-variable-migrator",
   "version": "1.0.0",
   "description": "Figma plugin for migrating variables.",
   "scripts": {
