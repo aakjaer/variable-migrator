@@ -574,7 +574,7 @@ const App: React.FC = () => {
             <aside className="w-56 border-r border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 flex flex-col overflow-hidden shrink-0">
               <div className="flex-1 overflow-y-auto">
                 {/* Collections section */}
-                <div className="px-3 pt-3 pb-1">
+                <div className="px-3 pt-3 pb-2">
                   <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
                     Collections
                   </span>
@@ -612,7 +612,7 @@ const App: React.FC = () => {
                 {state.sourceCollectionId && (
                   <>
                     <div className="h-px bg-zinc-200 dark:bg-zinc-700 mb-2" />
-                    <div className="px-3 pt-1 pb-1">
+                    <div className="px-3 pt-1 pb-2">
                       <span className="text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
                         Groups
                       </span>
@@ -766,12 +766,19 @@ const App: React.FC = () => {
                                 }`}
                             >
                               <div className="flex items-center justify-center">
-                                <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
-                                  isSelected
-                                    ? "bg-violet-500 border-violet-500"
-                                    : "border-zinc-300 dark:border-zinc-600"
-                                }`}>
-                                  {isSelected && <Check size={9} className="text-white shrink-0" />}
+                                <div
+                                  className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
+                                    isSelected
+                                      ? "bg-violet-500 border-violet-500"
+                                      : "border-zinc-300 dark:border-zinc-600"
+                                  }`}
+                                >
+                                  {isSelected && (
+                                    <Check
+                                      size={9}
+                                      className="text-white shrink-0"
+                                    />
+                                  )}
                                 </div>
                               </div>
                               <div className="pr-2 flex items-center gap-2 min-w-0 overflow-hidden">
