@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   RotateCw,
   Palette,
-  Layers,
   Check,
   ArrowLeft,
   ArrowRight,
@@ -129,8 +128,11 @@ function buildSections(
     [...arr].sort((a, b) => naturalCompare(leafName(a.name), leafName(b.name)));
 
   const sections: Section[] = [];
-  if (ungrouped.length > 0) sections.push({ label: "", vars: sortVars(ungrouped) });
-  for (const [label, vars] of [...grouped.entries()].sort(([a], [b]) => naturalCompare(a, b))) {
+  if (ungrouped.length > 0)
+    sections.push({ label: "", vars: sortVars(ungrouped) });
+  for (const [label, vars] of [...grouped.entries()].sort(([a], [b]) =>
+    naturalCompare(a, b),
+  )) {
     sections.push({ label, vars: sortVars(vars) });
   }
   return sections;
@@ -337,8 +339,20 @@ const App: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [variablesLoading, setVariablesLoading] = useState(false);
-  const [migrationProgress, setMigrationProgress] = useState<{ done: number; total: number } | null>(null);
-  const [migrationSummary, setMigrationSummary] = useState<{ movedCount: number; replacedCount: number; nodesUpdated: number; stylesUpdated: number } | null>(null);
+  const [migrationProgress, setMigrationProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+  const [migrationSummary, setMigrationSummary] = useState<{
+    movedCount: number;
+    replacedCount: number;
+    nodesUpdated: number;
+    stylesUpdated: number;
+  } | null>(null);
+  const [scanInfo, setScanInfo] = useState<{
+    topLevelFrames: number;
+    pages: number;
+  } | null>(null);
   const [replaceConflicts, setReplaceConflicts] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<string>("");
   const [dryRun, setDryRun] = useState<DryRunState>({ status: "idle" });
@@ -390,6 +404,8 @@ const App: React.FC = () => {
         } else {
           setDryRun({ status: "done", result: msg.payload });
         }
+      } else if (msg.type === "MIGRATION_SCANNING") {
+        setScanInfo(msg.payload);
       } else if (msg.type === "MIGRATION_PROGRESS") {
         setMigrationProgress(msg.payload);
       } else if (msg.type === "MIGRATION_SUCCESS") {
@@ -428,8 +444,8 @@ const App: React.FC = () => {
     [collections, state.sourceCollectionId],
   );
   const modes = currentCollection?.modes ?? [];
-  // checkbox(2.5rem) + name(1fr) + one column per mode + type(5rem)
-  const gridCols = `2.5rem 1fr ${modes.map(() => "minmax(0,1fr)").join(" ")} 5rem`;
+  // checkbox(2.5rem) + name(1fr) + one column per mode
+  const gridCols = `2.5rem 1fr ${modes.map(() => "minmax(0,1fr)").join(" ")}`;
 
   const visibleIds = visibleVariables.map((v) => v.id);
 
@@ -520,6 +536,7 @@ const App: React.FC = () => {
     setLoading(true);
     setMigrationProgress(null);
     setMigrationSummary(null);
+    setScanInfo(null);
     setState((prev) => ({ ...prev, step: "MIGRATING" }));
     parent.postMessage(
       {
@@ -588,21 +605,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white overflow-hidden text-xs">
-      {/* Header */}
-      <header className="flex items-center justify-between px-3 py-2.5 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="bg-zinc-900 p-1 rounded">
-            <Layers size={12} className="text-white" />
-          </div>
-          <h1 className="font-semibold tracking-tight">Variable Migrator</h1>
-        </div>
-        <RotateCw
-          size={18}
-          className="text-zinc-400 dark:text-zinc-500 cursor-pointer hover:text-zinc-900 dark:hover:text-white transition-colors"
-          onClick={refreshData}
-        />
-      </header>
-
       <main className="flex-1 overflow-hidden relative min-h-0 text-xs">
         {/* ── Step 1+2: Collections + variables ── */}
         {state.step === "VARIABLES" && (
@@ -723,9 +725,11 @@ const App: React.FC = () => {
                         ? selectedGroup.split("/").join(" / ")
                         : "All Variables"}
                     </span>
-                    <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                      {visibleVariables.length} variables
-                    </span>
+                    <RotateCw
+                      size={13}
+                      className="text-zinc-400 dark:text-zinc-500 cursor-pointer hover:text-zinc-900 dark:hover:text-white transition-colors"
+                      onClick={refreshData}
+                    />
                   </div>
 
                   {/* Stale data banner */}
@@ -757,9 +761,13 @@ const App: React.FC = () => {
                     <div />
                     <div className="pr-3 flex items-center">Name</div>
                     {modes.map((m) => (
-                      <div key={m.modeId} className="px-3 flex items-center truncate">{m.name}</div>
+                      <div
+                        key={m.modeId}
+                        className="px-3 flex items-center truncate"
+                      >
+                        {m.name}
+                      </div>
                     ))}
-                    <div className="px-3 flex items-center justify-end">Type</div>
                   </div>
 
                   {/* Variable list with group headers */}
@@ -768,90 +776,91 @@ const App: React.FC = () => {
                       <div className="flex items-center justify-center h-full">
                         <div className="w-4 h-4 border-2 border-zinc-300 dark:border-zinc-600 border-t-violet-500 rounded-full animate-spin" />
                       </div>
-                    ) : sections.map((section) => (
-                      <div key={section.label || "__root__"}>
-                        {/* Group header label */}
-                        {section.label &&
-                          (() => {
-                            const parts = section.label.split("/");
-                            const prefix = parts.slice(0, -1).join(" / ");
-                            const last = parts[parts.length - 1];
-                            return (
-                              <div className="px-4 pt-6 pb-2">
-                                {prefix && (
-                                  <span className="font-semibold text-zinc-400 dark:text-zinc-500">
-                                    {prefix} /{" "}
+                    ) : (
+                      sections.map((section) => (
+                        <div key={section.label || "__root__"}>
+                          {/* Group header label */}
+                          {section.label &&
+                            (() => {
+                              const parts = section.label.split("/");
+                              const prefix = parts.slice(0, -1).join(" / ");
+                              const last = parts[parts.length - 1];
+                              return (
+                                <div className="px-4 pt-6 pb-2">
+                                  {prefix && (
+                                    <span className="font-semibold text-zinc-400 dark:text-zinc-500">
+                                      {prefix} /{" "}
+                                    </span>
+                                  )}
+                                  <span className="font-semibold text-zinc-700 dark:text-zinc-200">
+                                    {last}
                                   </span>
-                                )}
-                                <span className="font-semibold text-zinc-700 dark:text-zinc-200">
-                                  {last}
-                                </span>
-                              </div>
-                            );
-                          })()}
-                        {/* Variable rows for this section */}
-                        {section.vars.map((v) => {
-                          const isSelected = state.selectedVariableIds.includes(
-                            v.id,
-                          );
-                          const displayName = v.name.split("/").pop()!;
-                          return (
-                            <div
-                              key={v.id}
-                              onClick={(e) =>
-                                handleVariableToggle(v.id, e.shiftKey)
-                              }
-                              className={`grid h-10 cursor-pointer transition-colors border-t border-zinc-100 dark:border-zinc-800
+                                </div>
+                              );
+                            })()}
+                          {/* Variable rows for this section */}
+                          {section.vars.map((v) => {
+                            const isSelected =
+                              state.selectedVariableIds.includes(v.id);
+                            const displayName = v.name.split("/").pop()!;
+                            return (
+                              <div
+                                key={v.id}
+                                onClick={(e) =>
+                                  handleVariableToggle(v.id, e.shiftKey)
+                                }
+                                className={`grid h-10 cursor-pointer transition-colors border-t border-zinc-100 dark:border-zinc-800
                                 ${
                                   isSelected
                                     ? "bg-violet-100 dark:bg-violet-950"
                                     : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
                                 }`}
-                              style={{ gridTemplateColumns: gridCols }}
-                            >
-                              <div className="flex items-center justify-center">
-                                <div
-                                  className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
-                                    isSelected
-                                      ? "bg-violet-500 border-violet-500"
-                                      : "border-zinc-300 dark:border-zinc-600"
-                                  }`}
-                                >
-                                  {isSelected && (
-                                    <Check
-                                      size={9}
-                                      className="text-white shrink-0"
+                                style={{ gridTemplateColumns: gridCols }}
+                              >
+                                <div className="flex items-center justify-center">
+                                  <div
+                                    className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
+                                      isSelected
+                                        ? "bg-violet-500 border-violet-500"
+                                        : "border-zinc-300 dark:border-zinc-600"
+                                    }`}
+                                  >
+                                    {isSelected && (
+                                      <Check
+                                        size={9}
+                                        className="text-white shrink-0"
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="pr-2 flex items-center gap-2 min-w-0 overflow-hidden">
+                                  <TypeIcon type={v.resolvedType} />
+                                  <span
+                                    className={`truncate ${
+                                      isSelected
+                                        ? "text-violet-900 dark:text-white"
+                                        : "text-zinc-700 dark:text-zinc-200"
+                                    }`}
+                                  >
+                                    {displayName}
+                                  </span>
+                                </div>
+                                {modes.map((m) => (
+                                  <div
+                                    key={m.modeId}
+                                    className="px-3 flex items-center min-w-0 overflow-hidden"
+                                  >
+                                    <ValueChip
+                                      value={v.previewValues[m.modeId]}
                                     />
-                                  )}
-                                </div>
+                                  </div>
+                                ))}
                               </div>
-                              <div className="pr-2 flex items-center gap-2 min-w-0 overflow-hidden">
-                                <TypeIcon type={v.resolvedType} />
-                                <span
-                                  className={`truncate ${
-                                    isSelected
-                                      ? "text-violet-900 dark:text-white"
-                                      : "text-zinc-700 dark:text-zinc-200"
-                                  }`}
-                                >
-                                  {displayName}
-                                </span>
-                              </div>
-                              {modes.map((m) => (
-                                <div key={m.modeId} className="px-3 flex items-center min-w-0 overflow-hidden">
-                                  <ValueChip value={v.previewValues[m.modeId]} />
-                                </div>
-                              ))}
-                              <div className="px-4 flex items-center justify-end">
-                                <span className="text-zinc-400 dark:text-zinc-600 font-mono uppercase text-xs">
-                                  {v.resolvedType}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
+                            );
+                          })}
+                        </div>
+                      ))
+                    )}
                   </div>
 
                   {/* Footer */}
@@ -1094,54 +1103,100 @@ const App: React.FC = () => {
         {(state.step === "MIGRATING" || state.step === "SUCCESS") && (
           <div className="flex flex-col items-center justify-center h-full p-6 text-center">
             {state.step === "MIGRATING" ? (
-              <>
-                <div className="w-16 h-16 border-4 border-violet-500 border-t-transparent rounded-full animate-spin mb-6" />
-                <h2 className="text-2xl font-bold mb-2">
-                  {migrationProgress && migrationProgress.total > 0
-                    ? "Updating References…"
-                    : "Migrating Variables…"}
-                </h2>
-                <p className="text-zinc-500 dark:text-zinc-400 max-w-sm mb-6">
-                  {migrationProgress && migrationProgress.total > 0
-                    ? `${migrationProgress.done.toLocaleString()} / ${migrationProgress.total.toLocaleString()} nodes`
-                    : "Creating variables in target collection…"}
-                </p>
-                <div className="w-full max-w-xs h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                  {migrationProgress && migrationProgress.total > 0 ? (
-                    <div
-                      className="h-full bg-violet-500 rounded-full transition-all duration-300"
-                      style={{ width: `${Math.round((migrationProgress.done / migrationProgress.total) * 100)}%` }}
-                    />
-                  ) : (
-                    <div className="h-full bg-violet-500 animate-pulse w-1/3" />
-                  )}
-                </div>
-              </>
+              (() => {
+                const isScanning =
+                  scanInfo !== null && migrationProgress === null;
+                const isRebinding =
+                  migrationProgress !== null && migrationProgress.total > 0;
+                const isLargeFile = (scanInfo?.topLevelFrames ?? 0) > 150;
+                return (
+                  <>
+                    <div className="w-16 h-16 border-4 border-violet-500 border-t-transparent rounded-full animate-spin mb-6" />
+                    <h2 className="text-2xl font-bold mb-2">
+                      {isScanning
+                        ? "Scanning Document…"
+                        : isRebinding
+                          ? "Updating References…"
+                          : "Migrating Variables…"}
+                    </h2>
+                    <p className="text-zinc-500 dark:text-zinc-400 max-w-xs mb-1">
+                      {isScanning
+                        ? `Traversing ${scanInfo!.topLevelFrames.toLocaleString()} top-level frames across ${scanInfo!.pages} page${scanInfo!.pages === 1 ? "" : "s"} to find bound nodes.`
+                        : isRebinding
+                          ? `${migrationProgress!.done.toLocaleString()} / ${migrationProgress!.total.toLocaleString()} nodes`
+                          : "Creating variables in the target collection, copying values, and updating aliases in all other collections."}
+                    </p>
+                    {!isScanning && !isRebinding && (
+                      <p className="text-zinc-400 dark:text-zinc-500 text-[11px] max-w-xs mb-4">
+                        The duration depends on the number of variables and cross-collection aliases in your file.
+                      </p>
+                    )}
+                    {isScanning && (
+                      <p className="text-zinc-400 dark:text-zinc-500 text-[11px] max-w-xs mb-4">
+                        {isLargeFile
+                          ? "Large file — Figma may appear frozen during the scan. This is normal."
+                          : "Figma may appear unresponsive during the scan."}
+                      </p>
+                    )}
+                    {isRebinding && (
+                      <p className="text-zinc-400 dark:text-zinc-500 text-[11px] max-w-xs mb-4">
+                        Rebinding variable references in nodes and styles.
+                      </p>
+                    )}
+                    {isRebinding && (
+                      <div className="w-full max-w-xs h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                          style={{
+                            width: `${Math.round((migrationProgress!.done / migrationProgress!.total) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    )}
+                  </>
+                );
+              })()
             ) : (
               <>
                 <div className="w-20 h-20 bg-violet-50 dark:bg-violet-950 border border-violet-500 rounded-full flex items-center justify-center mb-6">
-                  <Check size={40} className="text-violet-500" />
+                  <Check size={40} />
                 </div>
                 <h2 className="text-2xl font-bold mb-4">Migration Complete!</h2>
                 {migrationSummary && (
                   <div className="w-full max-w-xs mb-8 rounded-lg border border-zinc-200 dark:border-zinc-700 divide-y divide-zinc-200 dark:divide-zinc-700 text-sm">
                     <div className="flex justify-between px-4 py-2.5">
-                      <span className="text-zinc-500 dark:text-zinc-400">Variables moved</span>
-                      <span className="font-medium">{migrationSummary.movedCount}</span>
+                      <span className="text-zinc-500 dark:text-zinc-400">
+                        Variables moved
+                      </span>
+                      <span className="font-medium">
+                        {migrationSummary.movedCount}
+                      </span>
                     </div>
                     {migrationSummary.replacedCount > 0 && (
                       <div className="flex justify-between px-4 py-2.5">
-                        <span className="text-zinc-500 dark:text-zinc-400">Conflicts replaced</span>
-                        <span className="font-medium">{migrationSummary.replacedCount}</span>
+                        <span className="text-zinc-500 dark:text-zinc-400">
+                          Conflicts replaced
+                        </span>
+                        <span className="font-medium">
+                          {migrationSummary.replacedCount}
+                        </span>
                       </div>
                     )}
                     <div className="flex justify-between px-4 py-2.5">
-                      <span className="text-zinc-500 dark:text-zinc-400">Nodes updated</span>
-                      <span className="font-medium">{migrationSummary.nodesUpdated}</span>
+                      <span className="text-zinc-500 dark:text-zinc-400">
+                        Nodes updated
+                      </span>
+                      <span className="font-medium">
+                        {migrationSummary.nodesUpdated}
+                      </span>
                     </div>
                     <div className="flex justify-between px-4 py-2.5">
-                      <span className="text-zinc-500 dark:text-zinc-400">Styles updated</span>
-                      <span className="font-medium">{migrationSummary.stylesUpdated}</span>
+                      <span className="text-zinc-500 dark:text-zinc-400">
+                        Styles updated
+                      </span>
+                      <span className="font-medium">
+                        {migrationSummary.stylesUpdated}
+                      </span>
                     </div>
                   </div>
                 )}
@@ -1159,7 +1214,12 @@ const App: React.FC = () => {
                     setSelectedGroup("");
                     setVariablesLoading(true);
                     parent.postMessage(
-                      { pluginMessage: { type: "GET_VARIABLES", payload: { collectionId: targetId } } },
+                      {
+                        pluginMessage: {
+                          type: "GET_VARIABLES",
+                          payload: { collectionId: targetId },
+                        },
+                      },
                       "*",
                     );
                   }}
