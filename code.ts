@@ -29,6 +29,37 @@ function resolveMappedId(oldId: string): string | undefined {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Follow an alias chain until we reach a concrete COLOR value, then return
+// its hex string. Returns undefined for non-color or unresolvable aliases.
+// preferredModeId is tried first; falls back to first available mode so that
+// cross-collection aliases (different mode IDs) still resolve correctly.
+async function resolveAliasColor(
+  varId: string,
+  preferredModeId: string,
+  depth = 0,
+): Promise<string | undefined> {
+  if (depth > 10) return undefined;
+  const v = await figma.variables.getVariableByIdAsync(varId);
+  if (!v || v.resolvedType !== "COLOR") return undefined;
+
+  const val =
+    v.valuesByMode[preferredModeId] ??
+    Object.values(v.valuesByMode)[0];
+  if (!val) return undefined;
+
+  if (isVariableAlias(val)) {
+    return resolveAliasColor(val.id, preferredModeId, depth + 1);
+  }
+
+  if (typeof val === "object" && "r" in val) {
+    const c = val as { r: number; g: number; b: number };
+    const toHex = (n: number) =>
+      Math.round(n * 255).toString(16).padStart(2, "0");
+    return `#${toHex(c.r)}${toHex(c.g)}${toHex(c.b)}`;
+  }
+  return undefined;
+}
+
 function isVariableAlias(value: unknown): value is VariableAlias {
   return (
     typeof value === "object" &&
@@ -296,12 +327,89 @@ async function rebindPaintStyle(
 
 // ─── Main rebind pass ─────────────────────────────────────────────────────────
 
-async function rebindAll(): Promise<{ nodesUpdated: number; stylesUpdated: number }> {
-  const varCache = new Map<string, Variable>();
+// Returns true if any VariableAlias found inside `bv` has an id that is in
+// `sourceIdSet`. Works for both flat alias maps (fills/strokes paint-index
+// records) and direct alias values (opacity, cornerRadius, etc.).
+function hasRelevantAlias(bv: unknown, sourceIdSet: Set<string>): boolean {
+  if (!bv || typeof bv !== "object") return false;
+  for (const val of Object.values(bv as object)) {
+    if (!val || typeof val !== "object") continue;
+    const v = val as any;
+    if (v.type === "VARIABLE_ALIAS") {
+      if (sourceIdSet.has(v.id)) return true;
+    } else {
+      // Paint-index map: { "0": VariableAlias, "1": VariableAlias, … }
+      for (const inner of Object.values(v)) {
+        if (
+          inner &&
+          typeof inner === "object" &&
+          (inner as any).type === "VARIABLE_ALIAS" &&
+          sourceIdSet.has((inner as any).id)
+        ) return true;
+      }
+    }
+  }
+  return false;
+}
+
+async function rebindAll(
+  varCache: Map<string, Variable>,
+  onProgress: (done: number, total: number) => void,
+): Promise<{ nodesUpdated: number; stylesUpdated: number }> {
   let nodesUpdated = 0;
   let stylesUpdated = 0;
 
-  const allNodes = figma.root.findAll().filter((n): n is SceneNode => n.type !== "PAGE");
+  // Build a set of every source variable ID being migrated (both normalised
+  // and raw forms, since nodes can store either). This lets us skip the vast
+  // majority of nodes in large files — only nodes whose boundVariables
+  // actually reference one of our migrated IDs are included.
+  const sourceIdSet = new Set<string>(idMap.keys());
+
+  const allNodes = figma.root.findAll((n) => {
+    if (n.type === "PAGE") return false;
+
+    // Check top-level boundVariables (covers most node types).
+    const bv = (n as any).boundVariables;
+    if (bv && typeof bv === "object" && hasRelevantAlias(bv, sourceIdSet)) return true;
+
+    // TEXT: per-segment bindings are not reflected in top-level boundVariables.
+    if (n.type === "TEXT") {
+      try {
+        const segs = (n as TextNode).getStyledTextSegments(["boundVariables"]);
+        for (const seg of segs) {
+          if (hasRelevantAlias(seg.boundVariables, sourceIdSet)) return true;
+        }
+      } catch { return false; }
+    }
+
+    // INSTANCE: variable bindings can live in componentProperties, not in
+    // the top-level boundVariables object.
+    if (n.type === "INSTANCE") {
+      try {
+        const props = (n as InstanceNode).componentProperties;
+        if (props) {
+          for (const prop of Object.values(props)) {
+            if (hasRelevantAlias((prop as any).boundVariables, sourceIdSet)) return true;
+          }
+        }
+      } catch { return false; }
+    }
+
+    return false;
+  }) as SceneNode[];
+
+  const total = allNodes.length;
+  let done = 0;
+
+  // Announce the actual total before the loop so the progress bar can show
+  // 0 / N immediately (rather than staying in indeterminate mode until the
+  // first batch of 100 completes).
+  onProgress(0, total);
+  // Yield to the macro-task queue so this message is actually delivered to
+  // the UI before the synchronous rebind work starts. Without this, all
+  // postMessage calls stack up as microtasks and arrive at the iframe in one
+  // burst after the entire loop finishes.
+  await new Promise<void>(resolve => setTimeout(resolve, 0));
 
   for (const node of allNodes) {
     let nodeChanged = false;
@@ -317,6 +425,12 @@ async function rebindAll(): Promise<{ nodesUpdated: number; stylesUpdated: numbe
     }
 
     if (nodeChanged) nodesUpdated++;
+
+    done++;
+    if (done % 10 === 0 || done === total) {
+      onProgress(done, total);
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
   }
 
   const paintStyles = await figma.getLocalPaintStylesAsync();
@@ -329,11 +443,19 @@ async function rebindAll(): Promise<{ nodesUpdated: number; stylesUpdated: numbe
 
 // ─── Migration ────────────────────────────────────────────────────────────────
 
+interface MigrationResult {
+  movedCount: number;
+  replacedCount: number;
+  nodesUpdated: number;
+  stylesUpdated: number;
+}
+
 async function migrateVariables(
   sourceCollectionId: string,
   targetCollectionId: string,
-  variableIds: string[]
-): Promise<void> {
+  variableIds: string[],
+  replaceConflicts: boolean,
+): Promise<MigrationResult> {
   const sourceCol = await figma.variables.getVariableCollectionByIdAsync(sourceCollectionId);
   const targetCol = await figma.variables.getVariableCollectionByIdAsync(targetCollectionId);
 
@@ -343,11 +465,38 @@ async function migrateVariables(
 
   idMap.clear();
 
-  // Pass 1: Create new variables in the target collection
+  // Pass 1: Create new variables in the target collection.
+  // When replaceConflicts is true, variables whose name already exists in the
+  // target are mapped to the existing variable instead of creating a duplicate.
+  // Pass 2 then overwrites that variable's values from the source.
   let movedCount = 0;
+  let replacedCount = 0;
+
+  // Pre-index target variables by name so conflict lookup is O(1).
+  const targetVarsByName = new Map<string, Variable>();
+  if (replaceConflicts) {
+    const targetVars = await Promise.all(
+      targetCol.variableIds.map((id) => figma.variables.getVariableByIdAsync(id))
+    );
+    for (const tv of targetVars) {
+      if (tv) targetVarsByName.set(tv.name, tv);
+    }
+  }
+
   for (const sourceId of variableIds) {
     const sourceVar = await figma.variables.getVariableByIdAsync(sourceId);
     if (!sourceVar) continue;
+
+    if (replaceConflicts) {
+      const existing = targetVarsByName.get(sourceVar.name);
+      if (existing) {
+        // Map source → existing target; Pass 2 will overwrite its values.
+        registerMapping(sourceVar.id, existing.id);
+        movedCount++;
+        replacedCount++;
+        continue;
+      }
+    }
 
     const newVar = figma.variables.createVariable(
       sourceVar.name,
@@ -367,7 +516,12 @@ async function migrateVariables(
     movedCount++;
   }
 
-  // Pass 2: Copy values; remap any alias targets that were also migrated
+  // Pass 2: Copy values; remap any alias targets that were also migrated.
+  // Iterate over TARGET modes so every mode gets a value, even if the source
+  // collection has fewer modes. Matching priority:
+  //   1. Exact mode name match
+  //   2. Same positional index
+  //   3. First source mode (fallback)
   for (const sourceId of variableIds) {
     const sourceVar = await figma.variables.getVariableByIdAsync(sourceId);
     const newVarId = resolveMappedId(sourceId);
@@ -376,16 +530,18 @@ async function migrateVariables(
     const newVar = await figma.variables.getVariableByIdAsync(newVarId);
     if (!newVar) continue;
 
-    for (let modeIndex = 0; modeIndex < sourceCol.modes.length; modeIndex++) {
-      const sourceMode = sourceCol.modes[modeIndex];
+    for (let targetModeIndex = 0; targetModeIndex < targetCol.modes.length; targetModeIndex++) {
+      const targetMode = targetCol.modes[targetModeIndex];
+
+      const sourceMode =
+        sourceCol.modes.find((m) => m.name === targetMode.name) ??
+        sourceCol.modes[targetModeIndex] ??
+        sourceCol.modes[0];
+
+      if (!sourceMode) continue;
+
       const sourceValue = sourceVar.valuesByMode[sourceMode.modeId];
-
-      const targetMode =
-        targetCol.modes.find((m) => m.name === sourceMode.name) ??
-        targetCol.modes[modeIndex] ??
-        targetCol.modes[0];
-
-      if (!targetMode) continue;
+      if (sourceValue === undefined) continue;
 
       if (isVariableAlias(sourceValue)) {
         const resolvedAliasId = resolveMappedId(sourceValue.id) ?? sourceValue.id;
@@ -399,10 +555,47 @@ async function migrateVariables(
     }
   }
 
-  // Pass 3: Rebind all nodes and styles to the new variable IDs
-  const { nodesUpdated, stylesUpdated } = await rebindAll();
+  // Pass 3: Rebind alias values in ALL variables across ALL collections.
+  // Scene-node rebinding (Pass 4) handles node/style references, but other
+  // variables (e.g. Theme/color/brand aliasing Core/brand/600) also hold
+  // VariableAlias values that must be updated before the source is deleted.
+  const allCollections = await figma.variables.getLocalVariableCollectionsAsync();
+  for (const col of allCollections) {
+    for (const varId of col.variableIds) {
+      const variable = await figma.variables.getVariableByIdAsync(varId);
+      if (!variable) continue;
+      for (const [modeId, value] of Object.entries(variable.valuesByMode)) {
+        if (isVariableAlias(value)) {
+          const newId = resolveMappedId(value.id);
+          if (newId) {
+            variable.setValueForMode(modeId, { type: "VARIABLE_ALIAS", id: newId });
+          }
+        }
+      }
+    }
+  }
 
-  // Pass 4: Delete the original source variables
+  // Pass 4: Rebind all nodes and styles to the new variable IDs.
+  // Pre-warm the variable cache with all newly created variables so
+  // the inner loop hits memory instead of making async API calls per node.
+  const varCache = new Map<string, Variable>();
+  await Promise.all(
+    [...new Set(idMap.values())].map(async (newId) => {
+      const v = await figma.variables.getVariableByIdAsync(newId);
+      if (v) {
+        varCache.set(normalise(newId), v);
+        varCache.set(raw(newId), v);
+      }
+    })
+  );
+
+  figma.ui.postMessage({ type: "MIGRATION_PROGRESS", payload: { done: 0, total: 0 } });
+
+  const { nodesUpdated, stylesUpdated } = await rebindAll(varCache, (done, total) => {
+    figma.ui.postMessage({ type: "MIGRATION_PROGRESS", payload: { done, total } });
+  });
+
+  // Pass 5: Delete the original source variables
   for (const sourceId of variableIds) {
     const sourceVar = await figma.variables.getVariableByIdAsync(sourceId);
     if (sourceVar) sourceVar.remove();
@@ -410,9 +603,12 @@ async function migrateVariables(
 
   const skipped = variableIds.length - movedCount;
   const skippedNote = skipped > 0 ? ` (${skipped} skipped — deleted before migration)` : "";
+  const replacedNote = replacedCount > 0 ? `, ${replacedCount} replaced` : "";
   figma.notify(
-    `Done! Moved ${movedCount} variable(s)${skippedNote}. Updated ${nodesUpdated} nodes, ${stylesUpdated} styles.`
+    `Done! Moved ${movedCount} variable(s)${replacedNote}${skippedNote}. Updated ${nodesUpdated} nodes, ${stylesUpdated} styles.`
   );
+
+  return { movedCount, replacedCount, nodesUpdated, stylesUpdated };
 }
 
 // ─── Plugin lifecycle ─────────────────────────────────────────────────────────
@@ -449,6 +645,7 @@ figma.ui.onmessage = async (msg) => {
       payload: collections.map((col) => ({
         id: col.id,
         name: col.name,
+        modes: col.modes.map((m) => ({ modeId: m.modeId, name: m.name })),
         variableIds: col.variableIds,
       })),
     });
@@ -461,30 +658,42 @@ figma.ui.onmessage = async (msg) => {
     if (col) {
       watchedCollectionId = col.id;
       watchedVariableCount = col.variableIds.length;
-      const firstModeId = col.modes[0]?.modeId;
+
+      const toHex = (n: number) => Math.round(n * 255).toString(16).padStart(2, "0");
+
       const vars = await Promise.all(
         col.variableIds.map(async (id) => {
           const v = await figma.variables.getVariableByIdAsync(id);
           if (!v) return null;
-          let previewValue: { kind: string; [key: string]: unknown } | undefined;
-          if (firstModeId !== undefined) {
-            const raw = v.valuesByMode[firstModeId];
-            if (isVariableAlias(raw)) {
-              const aliasVar = await figma.variables.getVariableByIdAsync(raw.id);
-              previewValue = { kind: "alias", name: aliasVar ? aliasVar.name : raw.id };
-            } else if (v.resolvedType === "COLOR" && raw && typeof raw === "object") {
-              const c = raw as { r: number; g: number; b: number };
-              const toHex = (n: number) => Math.round(n * 255).toString(16).padStart(2, "0");
-              previewValue = { kind: "color", hex: `#${toHex(c.r)}${toHex(c.g)}${toHex(c.b)}` };
-            } else if (v.resolvedType === "FLOAT" && typeof raw === "number") {
-              previewValue = { kind: "float", value: raw };
-            } else if (v.resolvedType === "BOOLEAN" && typeof raw === "boolean") {
-              previewValue = { kind: "boolean", value: raw };
-            } else if (v.resolvedType === "STRING" && typeof raw === "string") {
-              previewValue = { kind: "string", value: raw };
+
+          const previewValues: Record<string, unknown> = {};
+          for (const mode of col.modes) {
+            const rawVal = v.valuesByMode[mode.modeId];
+            if (rawVal === undefined) continue;
+
+            if (isVariableAlias(rawVal)) {
+              const [aliasVar, resolvedColor] = await Promise.all([
+                figma.variables.getVariableByIdAsync(rawVal.id),
+                resolveAliasColor(rawVal.id, mode.modeId),
+              ]);
+              previewValues[mode.modeId] = {
+                kind: "alias",
+                name: aliasVar ? aliasVar.name : rawVal.id,
+                resolvedColor,
+              };
+            } else if (v.resolvedType === "COLOR" && rawVal && typeof rawVal === "object") {
+              const c = rawVal as { r: number; g: number; b: number };
+              previewValues[mode.modeId] = { kind: "color", hex: `#${toHex(c.r)}${toHex(c.g)}${toHex(c.b)}` };
+            } else if (v.resolvedType === "FLOAT" && typeof rawVal === "number") {
+              previewValues[mode.modeId] = { kind: "float", value: rawVal };
+            } else if (v.resolvedType === "BOOLEAN" && typeof rawVal === "boolean") {
+              previewValues[mode.modeId] = { kind: "boolean", value: rawVal };
+            } else if (v.resolvedType === "STRING" && typeof rawVal === "string") {
+              previewValues[mode.modeId] = { kind: "string", value: rawVal };
             }
           }
-          return { id: v.id, name: v.name, resolvedType: v.resolvedType, previewValue };
+
+          return { id: v.id, name: v.name, resolvedType: v.resolvedType, previewValues };
         })
       );
       figma.ui.postMessage({
@@ -509,67 +718,26 @@ figma.ui.onmessage = async (msg) => {
         return;
       }
 
-      // Gather names of the variables being moved; track how many no longer exist
+      // Parallel fetch — sequential awaits on large collections cause visible hangs
+      const [selectedVars, targetVars] = await Promise.all([
+        Promise.all(variableIds.map((id: string) => figma.variables.getVariableByIdAsync(id))),
+        Promise.all(targetCol.variableIds.map((id: string) => figma.variables.getVariableByIdAsync(id))),
+      ]);
+
       const movedNames = new Set<string>();
       let missingCount = 0;
-      for (const id of variableIds) {
-        const v = await figma.variables.getVariableByIdAsync(id);
+      for (const v of selectedVars) {
         if (v) movedNames.add(v.name);
         else missingCount++;
       }
 
-      // Detect name conflicts in the target collection
-      const conflictingNames: string[] = [];
-      for (const tvId of targetCol.variableIds) {
-        const tv = await figma.variables.getVariableByIdAsync(tvId);
-        if (tv && movedNames.has(tv.name)) conflictingNames.push(tv.name);
-      }
-
-      // Build an ID set covering both normalised and raw forms for fast lookup
-      const selectedIdSet = new Set([...variableIds.map(normalise), ...variableIds.map(raw)]);
-
-      const matchesAlias = (alias: unknown): boolean =>
-        isVariableAlias(alias) && selectedIdSet.has(normalise((alias as VariableAlias).id));
-
-      const nodeReferencesAny = (node: SceneNode): boolean => {
-        const bounds = (node as any).boundVariables;
-        if (!bounds) return false;
-        for (const field of ["fills", "strokes"]) {
-          const fb = bounds[field];
-          if (fb && typeof fb === "object" && Object.values(fb).some(matchesAlias)) return true;
-        }
-        for (const prop of SINGLE_PROPS) {
-          if (matchesAlias(bounds[prop])) return true;
-        }
-        if (node.type === "TEXT") {
-          try {
-            for (const seg of node.getStyledTextSegments(["boundVariables"])) {
-              if (!seg.boundVariables) continue;
-              for (const field of ["fills", "strokes"]) {
-                const fb = (seg.boundVariables as any)[field];
-                if (fb && typeof fb === "object" && Object.values(fb).some(matchesAlias)) return true;
-              }
-            }
-          } catch (_) {}
-        }
-        return false;
-      };
-
-      const allNodes = figma.root.findAll().filter((n): n is SceneNode => n.type !== "PAGE");
-      const nodesAffected = allNodes.filter(nodeReferencesAny).length;
-
-      let stylesAffected = 0;
-      for (const style of await figma.getLocalPaintStylesAsync()) {
-        if (!("boundVariables" in style) || !style.boundVariables) continue;
-        const paints = (style.boundVariables as any).paints;
-        if (paints && typeof paints === "object" && Object.values(paints).some(matchesAlias)) {
-          stylesAffected++;
-        }
-      }
+      const conflictingNames = targetVars
+        .filter((tv): tv is Variable => tv !== null && movedNames.has(tv.name))
+        .map(tv => tv.name);
 
       figma.ui.postMessage({
         type: "DRY_RUN_RESULT",
-        payload: { nodesAffected, stylesAffected, conflictingNames, missingCount },
+        payload: { conflictingNames, missingCount },
       });
     } catch (err: any) {
       figma.ui.postMessage({ type: "DRY_RUN_RESULT", payload: { error: "failed", message: err.message } });
@@ -578,12 +746,13 @@ figma.ui.onmessage = async (msg) => {
 
   if (msg.type === "RUN_MIGRATION") {
     try {
-      await migrateVariables(
+      const result = await migrateVariables(
         msg.payload.sourceCollectionId,
         msg.payload.targetCollectionId,
-        msg.payload.variableIds
+        msg.payload.variableIds,
+        msg.payload.replaceConflicts ?? false,
       );
-      figma.ui.postMessage({ type: "MIGRATION_SUCCESS" });
+      figma.ui.postMessage({ type: "MIGRATION_SUCCESS", payload: result });
     } catch (err: any) {
       figma.notify("Migration failed: " + err.message, { error: true });
       figma.ui.postMessage({ type: "MIGRATION_ERROR" });

@@ -2,7 +2,7 @@
 export type VariableType = 'COLOR' | 'FLOAT' | 'STRING' | 'BOOLEAN';
 
 export type PreviewValue =
-  | { kind: 'alias'; name: string }
+  | { kind: 'alias'; name: string; resolvedColor?: string }
   | { kind: 'color'; hex: string }
   | { kind: 'float'; value: number }
   | { kind: 'boolean'; value: boolean }
@@ -15,12 +15,10 @@ export interface Variable {
   description: string;
   valuesByMode: Record<string, any>;
   scopes: string[];
-  previewValue?: PreviewValue;
+  previewValues: Record<string, PreviewValue>; // modeId → preview value
 }
 
 export interface DryRunResult {
-  nodesAffected: number;
-  stylesAffected: number;
   conflictingNames: string[];
   missingCount: number;
 }

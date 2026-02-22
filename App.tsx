@@ -96,6 +96,11 @@ interface Section {
   vars: Variable[];
 }
 
+const naturalCompare = (a: string, b: string) =>
+  a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+
+const leafName = (name: string) => name.split("/").pop() ?? name;
+
 function buildSections(
   variables: Variable[],
   selectedGroup: string,
@@ -120,10 +125,13 @@ function buildSections(
     }
   }
 
+  const sortVars = (arr: Variable[]) =>
+    [...arr].sort((a, b) => naturalCompare(leafName(a.name), leafName(b.name)));
+
   const sections: Section[] = [];
-  if (ungrouped.length > 0) sections.push({ label: "", vars: ungrouped });
-  for (const [label, vars] of grouped) {
-    sections.push({ label, vars });
+  if (ungrouped.length > 0) sections.push({ label: "", vars: sortVars(ungrouped) });
+  for (const [label, vars] of [...grouped.entries()].sort(([a], [b]) => naturalCompare(a, b))) {
+    sections.push({ label, vars: sortVars(vars) });
   }
   return sections;
 }
@@ -176,7 +184,14 @@ const ValueChip: React.FC<{ value?: PreviewValue }> = ({ value }) => {
     const segments = value.name.split("/");
     return (
       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-100 border border-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 text-[12px] font-mono max-w-full min-w-0">
-        <span className="w-3 h-3 rounded-sm border border-zinc-300 bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-700 shrink-0" />
+        {value.resolvedColor ? (
+          <span
+            className="w-3 h-3 rounded-sm border border-zinc-300/50 dark:border-white/10 shrink-0"
+            style={{ backgroundColor: value.resolvedColor }}
+          />
+        ) : (
+          <span className="w-3 h-3 rounded-sm border border-zinc-300 bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-700 shrink-0" />
+        )}
         <span className="truncate">{segments.join("/")}</span>
       </span>
     );
@@ -321,6 +336,10 @@ const App: React.FC = () => {
     step: "VARIABLES",
   });
   const [loading, setLoading] = useState(false);
+  const [variablesLoading, setVariablesLoading] = useState(false);
+  const [migrationProgress, setMigrationProgress] = useState<{ done: number; total: number } | null>(null);
+  const [migrationSummary, setMigrationSummary] = useState<{ movedCount: number; replacedCount: number; nodesUpdated: number; stylesUpdated: number } | null>(null);
+  const [replaceConflicts, setReplaceConflicts] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<string>("");
   const [dryRun, setDryRun] = useState<DryRunState>({ status: "idle" });
   const [variablesFetchedAt, setVariablesFetchedAt] = useState(0);
@@ -339,6 +358,7 @@ const App: React.FC = () => {
       selectedVariableIds: [],
     }));
     setSelectedGroup("");
+    setVariablesLoading(true);
     parent.postMessage(
       {
         pluginMessage: {
@@ -361,6 +381,7 @@ const App: React.FC = () => {
         setSelectedGroup("");
         setVariablesFetchedAt(Date.now());
         setVariablesStale(false);
+        setVariablesLoading(false);
       } else if (msg.type === "VARIABLES_STALE") {
         setVariablesStale(true);
       } else if (msg.type === "DRY_RUN_RESULT") {
@@ -369,8 +390,12 @@ const App: React.FC = () => {
         } else {
           setDryRun({ status: "done", result: msg.payload });
         }
+      } else if (msg.type === "MIGRATION_PROGRESS") {
+        setMigrationProgress(msg.payload);
       } else if (msg.type === "MIGRATION_SUCCESS") {
         setLoading(false);
+        setMigrationProgress(null);
+        setMigrationSummary(msg.payload ?? null);
         setState((prev) => ({ ...prev, step: "SUCCESS" }));
         parent.postMessage({ pluginMessage: { type: "GET_DATA" } }, "*");
       } else if (msg.type === "MIGRATION_ERROR") {
@@ -398,6 +423,14 @@ const App: React.FC = () => {
     [visibleVariables, selectedGroup],
   );
 
+  const currentCollection = useMemo(
+    () => collections.find((c) => c.id === state.sourceCollectionId),
+    [collections, state.sourceCollectionId],
+  );
+  const modes = currentCollection?.modes ?? [];
+  // checkbox(2.5rem) + name(1fr) + one column per mode + type(5rem)
+  const gridCols = `2.5rem 1fr ${modes.map(() => "minmax(0,1fr)").join(" ")} 5rem`;
+
   const visibleIds = visibleVariables.map((v) => v.id);
 
   const handleSourceSelect = (id: string) => {
@@ -407,6 +440,7 @@ const App: React.FC = () => {
       selectedVariableIds: [],
     }));
     setSelectedGroup("");
+    setVariablesLoading(true);
     parent.postMessage(
       {
         pluginMessage: { type: "GET_VARIABLES", payload: { collectionId: id } },
@@ -484,6 +518,8 @@ const App: React.FC = () => {
 
   const runMigration = () => {
     setLoading(true);
+    setMigrationProgress(null);
+    setMigrationSummary(null);
     setState((prev) => ({ ...prev, step: "MIGRATING" }));
     parent.postMessage(
       {
@@ -493,6 +529,7 @@ const App: React.FC = () => {
             sourceCollectionId: state.sourceCollectionId,
             targetCollectionId: state.targetCollectionId,
             variableIds: state.selectedVariableIds,
+            replaceConflicts,
           },
         },
       },
@@ -550,7 +587,7 @@ const App: React.FC = () => {
     : null;
 
   return (
-    <div className="flex flex-col h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white overflow-hidden text-xs">
+    <div className="flex flex-col h-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-white overflow-hidden text-xs">
       {/* Header */}
       <header className="flex items-center justify-between px-3 py-2.5 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 shrink-0">
         <div className="flex items-center gap-2">
@@ -713,19 +750,25 @@ const App: React.FC = () => {
                   )}
 
                   {/* Column header */}
-                  <div className="shrink-0 h-9 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 grid grid-cols-[2.5rem_1fr_1fr_5rem] font-semibold text-zinc-500 dark:text-zinc-500 uppercase text-[10px] tracking-wider">
+                  <div
+                    className="shrink-0 h-9 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 grid font-semibold text-zinc-500 dark:text-zinc-500 uppercase text-[10px] tracking-wider"
+                    style={{ gridTemplateColumns: gridCols }}
+                  >
                     <div />
                     <div className="pr-3 flex items-center">Name</div>
-                    <div className="px-3 flex items-center">Value</div>
-                    <div className="px-3 flex items-center justify-end">
-                      Type
-                    </div>
+                    {modes.map((m) => (
+                      <div key={m.modeId} className="px-3 flex items-center truncate">{m.name}</div>
+                    ))}
+                    <div className="px-3 flex items-center justify-end">Type</div>
                   </div>
 
                   {/* Variable list with group headers */}
                   <div className="flex-1 overflow-y-auto select-none">
-                    {/* Sections */}
-                    {sections.map((section) => (
+                    {variablesLoading ? (
+                      <div className="flex items-center justify-center h-full">
+                        <div className="w-4 h-4 border-2 border-zinc-300 dark:border-zinc-600 border-t-violet-500 rounded-full animate-spin" />
+                      </div>
+                    ) : sections.map((section) => (
                       <div key={section.label || "__root__"}>
                         {/* Group header label */}
                         {section.label &&
@@ -758,12 +801,13 @@ const App: React.FC = () => {
                               onClick={(e) =>
                                 handleVariableToggle(v.id, e.shiftKey)
                               }
-                              className={`grid grid-cols-[2.5rem_1fr_1fr_5rem] h-10 cursor-pointer transition-colors border-t border-zinc-100 dark:border-zinc-800
+                              className={`grid h-10 cursor-pointer transition-colors border-t border-zinc-100 dark:border-zinc-800
                                 ${
                                   isSelected
                                     ? "bg-violet-100 dark:bg-violet-950"
                                     : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
                                 }`}
+                              style={{ gridTemplateColumns: gridCols }}
                             >
                               <div className="flex items-center justify-center">
                                 <div
@@ -793,9 +837,11 @@ const App: React.FC = () => {
                                   {displayName}
                                 </span>
                               </div>
-                              <div className="px-3 flex items-center min-w-0 overflow-hidden">
-                                <ValueChip value={v.previewValue} />
-                              </div>
+                              {modes.map((m) => (
+                                <div key={m.modeId} className="px-3 flex items-center min-w-0 overflow-hidden">
+                                  <ValueChip value={v.previewValues[m.modeId]} />
+                                </div>
+                              ))}
                               <div className="px-4 flex items-center justify-end">
                                 <span className="text-zinc-400 dark:text-zinc-600 font-mono uppercase text-xs">
                                   {v.resolvedType}
@@ -870,6 +916,7 @@ const App: React.FC = () => {
                     targetCollectionId: null,
                   }));
                   setDryRun({ status: "idle" });
+                  setReplaceConflicts(false);
                 }}
                 className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
               >
@@ -914,27 +961,6 @@ const App: React.FC = () => {
 
                 {dryRun.status === "done" && (
                   <div className="rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-                    <div className="px-4 py-3 flex items-center gap-6 text-sm">
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="font-semibold tabular-nums text-zinc-900 dark:text-white">
-                          {dryRun.result.nodesAffected}
-                        </span>
-                        <span className="text-zinc-400 dark:text-zinc-500">
-                          node
-                          {dryRun.result.nodesAffected !== 1 ? "s" : ""}{" "}
-                        </span>
-                      </div>
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="font-semibold tabular-nums text-zinc-900 dark:text-white">
-                          {dryRun.result.stylesAffected}
-                        </span>
-                        <span className="text-zinc-400 dark:text-zinc-500">
-                          style
-                          {dryRun.result.stylesAffected !== 1 ? "s" : ""}{" "}
-                        </span>
-                      </div>
-                    </div>
-
                     {dryRun.result.missingCount > 0 && (
                       <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-700 bg-red-500/5">
                         <div className="flex items-start gap-2.5">
@@ -965,7 +991,7 @@ const App: React.FC = () => {
                             size={13}
                             className="text-yellow-500 mt-0.5 shrink-0"
                           />
-                          <div className="min-w-0">
+                          <div className="min-w-0 w-full">
                             <p className="text-yellow-600 dark:text-yellow-400 text-xs font-medium mb-1">
                               {dryRun.result.conflictingNames.length} name
                               conflict
@@ -974,10 +1000,11 @@ const App: React.FC = () => {
                                 : ""}
                             </p>
                             <p className="text-zinc-500 dark:text-zinc-400 text-xs mb-2">
-                              These variables already exist in the target.
-                              Duplicates will be created.
+                              {replaceConflicts
+                                ? "Existing variables in the target will be overwritten with the source values."
+                                : "These variables already exist in the target. Duplicates will be created."}
                             </p>
-                            <ul className="space-y-0.5">
+                            <ul className="space-y-0.5 mb-3">
                               {dryRun.result.conflictingNames
                                 .slice(0, 5)
                                 .map((name) => (
@@ -995,6 +1022,30 @@ const App: React.FC = () => {
                                 </li>
                               )}
                             </ul>
+                            {/* Replace toggle */}
+                            <button
+                              onClick={() => setReplaceConflicts((v) => !v)}
+                              className="flex items-center gap-2 group"
+                            >
+                              <span
+                                className={`relative inline-flex w-7 h-4 rounded-full transition-colors shrink-0 ${
+                                  replaceConflicts
+                                    ? "bg-violet-500"
+                                    : "bg-zinc-300 dark:bg-zinc-600"
+                                }`}
+                              >
+                                <span
+                                  className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${
+                                    replaceConflicts
+                                      ? "translate-x-3.5"
+                                      : "translate-x-0.5"
+                                  }`}
+                                />
+                              </span>
+                              <span className="text-xs text-zinc-600 dark:text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors">
+                                Replace existing variables
+                              </span>
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1046,14 +1097,24 @@ const App: React.FC = () => {
               <>
                 <div className="w-16 h-16 border-4 border-violet-500 border-t-transparent rounded-full animate-spin mb-6" />
                 <h2 className="text-2xl font-bold mb-2">
-                  Migrating Variables...
+                  {migrationProgress && migrationProgress.total > 0
+                    ? "Updating References…"
+                    : "Migrating Variables…"}
                 </h2>
-                <p className="text-zinc-500 dark:text-zinc-400 max-w-sm">
-                  Moving variables and updating all references across your
-                  design.
+                <p className="text-zinc-500 dark:text-zinc-400 max-w-sm mb-6">
+                  {migrationProgress && migrationProgress.total > 0
+                    ? `${migrationProgress.done.toLocaleString()} / ${migrationProgress.total.toLocaleString()} nodes`
+                    : "Creating variables in target collection…"}
                 </p>
-                <div className="w-full max-w-xs mt-8 h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-violet-500 animate-pulse w-[65%]" />
+                <div className="w-full max-w-xs h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                  {migrationProgress && migrationProgress.total > 0 ? (
+                    <div
+                      className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                      style={{ width: `${Math.round((migrationProgress.done / migrationProgress.total) * 100)}%` }}
+                    />
+                  ) : (
+                    <div className="h-full bg-violet-500 animate-pulse w-1/3" />
+                  )}
                 </div>
               </>
             ) : (
@@ -1061,21 +1122,46 @@ const App: React.FC = () => {
                 <div className="w-20 h-20 bg-violet-50 dark:bg-violet-950 border border-violet-500 rounded-full flex items-center justify-center mb-6">
                   <Check size={40} className="text-violet-500" />
                 </div>
-                <h2 className="text-2xl font-bold mb-2">Migration Complete!</h2>
-                <p className="text-zinc-500 dark:text-zinc-400 max-w-sm mb-8">
-                  All variables have been moved and references updated across
-                  your design.
-                </p>
+                <h2 className="text-2xl font-bold mb-4">Migration Complete!</h2>
+                {migrationSummary && (
+                  <div className="w-full max-w-xs mb-8 rounded-lg border border-zinc-200 dark:border-zinc-700 divide-y divide-zinc-200 dark:divide-zinc-700 text-sm">
+                    <div className="flex justify-between px-4 py-2.5">
+                      <span className="text-zinc-500 dark:text-zinc-400">Variables moved</span>
+                      <span className="font-medium">{migrationSummary.movedCount}</span>
+                    </div>
+                    {migrationSummary.replacedCount > 0 && (
+                      <div className="flex justify-between px-4 py-2.5">
+                        <span className="text-zinc-500 dark:text-zinc-400">Conflicts replaced</span>
+                        <span className="font-medium">{migrationSummary.replacedCount}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between px-4 py-2.5">
+                      <span className="text-zinc-500 dark:text-zinc-400">Nodes updated</span>
+                      <span className="font-medium">{migrationSummary.nodesUpdated}</span>
+                    </div>
+                    <div className="flex justify-between px-4 py-2.5">
+                      <span className="text-zinc-500 dark:text-zinc-400">Styles updated</span>
+                      <span className="font-medium">{migrationSummary.stylesUpdated}</span>
+                    </div>
+                  </div>
+                )}
                 <button
                   onClick={() => {
+                    const targetId = state.targetCollectionId!;
                     setState({
-                      sourceCollectionId: null,
+                      sourceCollectionId: targetId,
                       selectedVariableIds: [],
                       targetCollectionId: null,
                       step: "VARIABLES",
                     });
                     setVariables([]);
                     setDryRun({ status: "idle" });
+                    setSelectedGroup("");
+                    setVariablesLoading(true);
+                    parent.postMessage(
+                      { pluginMessage: { type: "GET_VARIABLES", payload: { collectionId: targetId } } },
+                      "*",
+                    );
                   }}
                   className="px-8 py-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg font-medium text-zinc-800 dark:text-white hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
                 >
